@@ -7,8 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Forgewisp is a TypeScript library (`@forgewisp/core`) that lets browser apps register their own
 functions as tools for an AI agent, with JSON Schema validation, a risk-tier execution model
 (`read` / `write` / `destructive`), OpenAI-compatible streaming, a dual reasoning stream, and an
-audit log. It runs entirely in the browser with no mandatory backend. A vanilla-TS task-manager
-demo (`apps/demo`) exercises it.
+audit log. It runs entirely in the browser with no mandatory backend. A companion package
+(`@forgewisp/bundled-tools`) ships a catalog of ready-to-register browser-effects tools, and two
+vanilla-TS demos exercise the library: a task manager (`apps/demo`) and a bundled-tools showcase
+(`apps/bundled-demo`).
+
+
+## Cross-session progress
+
+A `PROGRESS.md` may exist at the repo root (it is gitignored, so it stays local and is never
+committed). When present, **read it first** before starting work — it is a running log of
+in-progress changes, what's verified, what's pending, and gotchas carried across sessions.
+Append a new dated entry to the top when you finish a chunk of work so the next session can pick
+up where you left off. Do not commit it.
 
 
 ## Commands
@@ -118,6 +129,42 @@ goes through DOMPurify (helpers in `src/render.ts`). The model can return arbitr
 including raw HTML; without sanitization, `<img src=x onerror=…>` would execute. Don't bypass
 `renderMarkdown` / `renderArgsHtml` / `escapeHtml` when adding new UI.
 
+### `@forgewisp/bundled-tools` — the tool catalog
+
+A workspace package shipping ready-to-register `FunctionDefinition` tools (no handler-arg casts:
+the `defineTool<TArgs>` identity helper infers them). The barrel `src/index.ts` exports
+`BUNDLED_TOOLS`, a readonly array grouped `read` → `write` → `destructive`, plus per-tool named
+re-exports (values + `Args`/`Result` types). One file per tool in `src/tools/`, each with a strict
+JSON Schema (`additionalProperties: false`, bounded strings/numbers, `enum` only for closed sets)
+and a handler that guards missing Web-Platform APIs and throws a clear `Error` (→ `function_errored`).
+`src/eval-math.ts` is an internal safe math evaluator (shunting-yard, **no `eval`/`Function`**,
+closed grammar, `Number.isFinite` overflow check) — imported only by `evaluate-math.ts` and its
+test, deliberately not re-exported. The only runtime dep is `@forgewisp/core` (validation runs in
+core). Tools cover: time/UUIDs/safe-math/hashing/base64/viewport/battery/localStorage
+(`read`), clipboard/speech/download/geolocation/localStorage-set (`write`), and
+localStorage-remove (`destructive`). Async handlers are supported via the executor's
+`await Promise.resolve(handler(args))`.
+
+**Tier discipline is a security boundary here too:** `write`/`destructive` tools require the
+consumer to configure `onConfirmRequired` (core throws at registration time otherwise). Consumers
+must never render confirmation UI from raw LLM output — only from the schema-validated
+`PendingCall.args`.
+
+### `apps/bundled-demo` — the bundled-tools showcase
+
+Vanilla TS + Vite, structurally identical to `apps/demo` (same config overlay, chat form, streaming,
+reasoning panel, FIFO confirm queue, race guard, conversation threading, DOMPurify sanitization).
+Differences: it registers **all** of `BUNDLED_TOOLS` instead of inline task tools, renders a
+toolkit sidebar (`renderToolsList`, tier-grouped) and an artifacts panel fed by `onAuditEvent`
+(`renderArtifact` dispatches on `event.functionName`; the geolocation OSM link `href` is built from
+`Number(lat)`/`Number(lng)` + `escapeHtml` so no payload can break the attribute). The
+`renderMarkdown` DOMPurify allowlist (`['href','title']`) is shared and **must not grow**;
+`renderToolsList`/`renderArtifact` use their own local allowlists. Because `BUNDLED_TOOLS` is a
+heterogeneous tuple, `main.ts` erases it once with `as unknown as readonly FunctionDefinition[]`
+(handler contravariance workaround) and `renderToolsList` takes a structural `ToolMeta` subset.
+Vite resolves `@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, so build/watch
+the package before running the demo's `dev`.
+
 ## Conventions worth knowing
 
 - **Risk tiers are a security boundary, not a UX nicety.** Confirmation UI is always rendered
@@ -132,6 +179,9 @@ including raw HTML; without sanitization, `<img src=x onerror=…>` would execut
   `*.md` is in `.prettierignore`.
 - **CI (`.github/workflows/ci.yml`)** runs `format:check`, `lint`, `typecheck`, `build`, `test`
   with `pnpm install --frozen-lockfile`. Releases (`release.yml`) are tag-driven (`v*`), verify
-  the tag matches `packages/core/package.json` version, then publish `@forgewisp/core` to npm with
-  provenance — so bumping the package version must accompany a release tag.
+  the tag matches **both** `packages/core/package.json` and
+  `packages/bundled-tools/package.json` (they version in lockstep), then publish `@forgewisp/core`
+  to npm followed by `@forgewisp/bundled-tools` (the latter via `pnpm publish`, which rewrites its
+  `workspace:*` dependency on core to the resolved version) — so bumping both package versions
+  must accompany a release tag.
 - The only runtime dependency in `@forgewisp/core` is `ajv`. Keep the dep surface minimal.

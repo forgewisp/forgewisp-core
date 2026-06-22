@@ -1,0 +1,28 @@
+{
+  "name": "forgewisp-bundled-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --config ../../eslint.config.mjs src tests",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@forgewisp/core": "workspace:*",
+    "@forgewisp/bundled-tools": "workspace:*",
+    "dompurify": "^3.2.0",
+    "marked": "^18.0.5"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.0.0",
+    "jsdom": "^25.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
