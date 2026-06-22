@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+.turbo/
+apps/demo/dist/
+
+# Test coverage
+coverage/
+
+# Local env / secrets
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.idea/
+*.swp
+*.swo
+
+# Vite cache
+.vite/
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "inputs": ["src/**", "tsup.config.ts", "package.json", "tsconfig.json"]
+    },
+    "test": {
+      "outputs": [],
+      "inputs": ["src/**", "tests/**", "vitest.config.ts", "package.json", "tsconfig.json"]
+    },
+    "typecheck": {
+      "outputs": [],
+      "inputs": ["src/**", "tests/**", "tsconfig.json", "package.json"]
+    },
+    "lint": {
+      "outputs": [],
+      "inputs": ["src/**", "tests/**", ".eslintrc.json", "tsconfig.json", "package.json"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
