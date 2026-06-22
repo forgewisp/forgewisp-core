@@ -15,9 +15,12 @@ export interface JSONSchemaProperty {
   maximum?: number;
   minLength?: number;
   maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
   items?: JSONSchemaProperty;
   properties?: Record<string, JSONSchemaProperty>;
   required?: string[];
+  additionalProperties?: boolean;
 }
 
 // ─── Risk Tiers ─────────────────────────────────────────────────────────────

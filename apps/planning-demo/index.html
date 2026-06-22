@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Forgewisp Planning Agent</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <h1>Forgewisp Planning Agent</h1>
+        <p class="subtitle">Plan &amp; TODO demo · AI agent</p>
+
+        <section class="tools-section">
+          <h2>Toolkit</h2>
+          <div id="tools-list"></div>
+        </section>
+
+        <section class="artifacts-section">
+          <h2>Active Plans <button type="button" id="clear-artifacts-btn">Clear</button></h2>
+          <ul id="artifacts-list" aria-label="Active plans"></ul>
+        </section>
+
+        <section class="reasoning-section hidden" id="reasoning-section">
+          <h2>Reasoning</h2>
+          <div id="reasoning-output"></div>
+        </section>
+
+        <section class="audit-section">
+          <h2>Audit Log <button type="button" id="clear-audit-btn">Clear</button></h2>
+          <ul id="audit-log"></ul>
+        </section>
+      </aside>
+
+      <main class="chat-area">
+        <div id="chat-messages" class="chat-messages" role="log" aria-live="polite"></div>
+        <form id="chat-form" class="chat-form">
+          <label class="sr-only" for="chat-input">Chat message</label>
+          <input
+            id="chat-input"
+            type="text"
+            placeholder='Type a message, or tap an example below to get started →'
+            autocomplete="off"
+          />
+          <button type="submit">Send</button>
+        </form>
+        <div id="example-prompts" class="example-prompts" aria-label="Example prompts"></div>
+      </main>
+    </div>
+
+    <div
+      id="config-overlay"
+      class="overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="config-title"
+    >
+      <div class="confirm-dialog">
+        <h3 id="config-title">Connect an LLM</h3>
+        <p>Configure an OpenAI-compatible endpoint.</p>
+        <form id="config-form">
+          <label
+            >Endpoint
+            <input
+              id="config-endpoint"
+              type="text"
+              placeholder="https://api.openai.com/v1/chat/completions"
+              required
+            />
+          </label>
+          <label
+            >Model
+            <input id="config-model" type="text" placeholder="gpt-4o" required />
+          </label>
+          <label
+            >API key (optional if proxied)
+            <input id="config-apikey" type="password" placeholder="sk-..." autocomplete="off" />
+          </label>
+          <div class="confirm-buttons">
+            <button type="submit" class="btn-confirm">Connect</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      id="confirm-overlay"
+      class="overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-title"
+    >
+      <div class="confirm-dialog">
+        <h3 id="confirm-title"></h3>
+        <p id="confirm-description"></p>
+        <div class="confirm-args" id="confirm-args"></div>
+        <div class="confirm-buttons">
+          <button type="button" id="confirm-accept" class="btn-confirm">Confirm</button>
+          <button type="button" id="confirm-reject" class="btn-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -52,6 +52,32 @@ export type { GetGeolocationArgs, GetGeolocationResult } from './tools/index.js'
 export { removeLocalStorageItem } from './tools/index.js';
 export type { RemoveLocalStorageItemArgs, RemoveLocalStorageItemResult } from './tools/index.js';
 
+// Planning tools (agent job-tracking scratchpad persisted in localStorage).
+export { listPlans } from './tools/index.js';
+export type { ListPlansArgs, ListPlansResult } from './tools/index.js';
+
+export { getPlan } from './tools/index.js';
+export type { GetPlanArgs, GetPlanResult } from './tools/index.js';
+
+export { createPlan } from './tools/index.js';
+export type { CreatePlanArgs, CreatePlanResult, CreatePlanItemInput } from './tools/index.js';
+
+export { addPlanItem } from './tools/index.js';
+export type { AddPlanItemArgs, AddPlanItemResult } from './tools/index.js';
+
+export { updatePlanItem } from './tools/index.js';
+export type { UpdatePlanItemArgs, UpdatePlanItemResult } from './tools/index.js';
+
+export { removePlanItem } from './tools/index.js';
+export type { RemovePlanItemArgs, RemovePlanItemResult } from './tools/index.js';
+
+export { deletePlan } from './tools/index.js';
+export type { DeletePlanArgs, DeletePlanResult } from './tools/index.js';
+
+// Shared plan domain types (the store module itself is not re-exported as a value —
+// it is an internal helper, like `eval-math.ts`).
+export type { Plan, PlanItem, PlanStatus, PlanPriority, PlanSummary } from './plan-store.js';
+
 import { getCurrentTime } from './tools/index.js';
 import { generateUuid } from './tools/index.js';
 import { evaluateMath } from './tools/index.js';
@@ -68,6 +94,13 @@ import { downloadFile } from './tools/index.js';
 import { setLocalStorageItem } from './tools/index.js';
 import { getGeolocation } from './tools/index.js';
 import { removeLocalStorageItem } from './tools/index.js';
+import { listPlans } from './tools/index.js';
+import { getPlan } from './tools/index.js';
+import { createPlan } from './tools/index.js';
+import { addPlanItem } from './tools/index.js';
+import { updatePlanItem } from './tools/index.js';
+import { removePlanItem } from './tools/index.js';
+import { deletePlan } from './tools/index.js';
 
 /**
  * Every bundled tool, ready to register. Use:
@@ -92,6 +125,16 @@ export const BUNDLED_TOOLS = [
   getBatteryInfo,
   listLocalStorageKeys,
   getLocalStorageItem,
+  // read — agent job-tracking scratchpad (forgewisp.plans); see plan-store.ts.
+  // read-tier by exception: agent-owned, bounded, schema-validated scratchpad,
+  // so the agent self-manages its job without onConfirmRequired prompts.
+  listPlans,
+  getPlan,
+  createPlan,
+  addPlanItem,
+  updatePlanItem,
+  removePlanItem,
+  deletePlan,
   // write
   copyToClipboard,
   speakText,
