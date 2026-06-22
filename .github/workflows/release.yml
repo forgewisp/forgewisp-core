@@ -32,17 +32,20 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Verify the git tag matches the package version before any publish.
+      # Verify the git tag matches every publishable package's version before any
+      # publish. Both @forgewisp/core and @forgewisp/bundled-tools version in
+      # lockstep with the release tag, so a mismatch on either fails the run.
       - name: Check tag/version parity
-        working-directory: packages/core
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$TAG" != "$PKG_VERSION" ]; then
-            echo "Tag v$TAG does not match packages/core/package.json version $PKG_VERSION"
-            exit 1
-          fi
-          echo "Tag v$TAG matches package version $PKG_VERSION"
+          for pkg in packages/core packages/bundled-tools; do
+            PKG_VERSION=$(node -p "require('./$pkg/package.json').version")
+            if [ "$TAG" != "$PKG_VERSION" ]; then
+              echo "Tag v$TAG does not match $pkg/package.json version $PKG_VERSION"
+              exit 1
+            fi
+            echo "Tag v$TAG matches $pkg version $PKG_VERSION"
+          done
 
       - run: pnpm lint
 
@@ -55,6 +58,18 @@ jobs:
       - name: Publish @forgewisp/core to npm
         working-directory: packages/core
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Use pnpm publish (not npm publish) for @forgewisp/bundled-tools: its
+      # dependency on @forgewisp/core is declared as "workspace:*", and only
+      # pnpm rewrites the workspace protocol to the resolved version when
+      # packing. npm publish would publish the literal "workspace:*" string,
+      # which npm rejects. Must run after core's publish so the resolved
+      # version is already on the registry.
+      - name: Publish @forgewisp/bundled-tools to npm
+        working-directory: packages/bundled-tools
+        run: pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

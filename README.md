@@ -8,12 +8,23 @@
 ## Packages
 
 - **[`packages/core`](packages/core)** — `@forgewisp/core`, the library.
+- **[`packages/bundled-tools`](packages/bundled-tools)** — `@forgewisp/bundled-tools`,
+  a catalog of ready-to-register browser-effects tools (time, UUIDs, safe math,
+  hashing, base64, viewport/battery/localStorage reads, clipboard/speech/download/
+  geolocation/localStorage writes, and a destructive localStorage remove).
 - **[`apps/demo`](apps/demo)** — vanilla TypeScript + Vite demo: a
   task-manager UI driven by an AI agent whose tools mutate local state.
+- **[`apps/bundled-demo`](apps/bundled-demo)** — vanilla TypeScript + Vite showcase
+  that registers all of `@forgewisp/bundled-tools` and renders a toolkit sidebar
+  plus an artifacts panel fed by the audit log.
 
 ## Features
 
 - **Register frontend functions as agent tools** with a JSON Schema for args.
+- **Bundled tool catalog** — `@forgewisp/bundled-tools` ships ready-to-register
+  browser-effects tools with strict JSON Schemas and safe handlers, so you can
+  give an agent real browser capabilities in one `forEach`. See
+  [`packages/bundled-tools`](packages/bundled-tools).
 - **Risk tiers**: `read` runs immediately; `write` and `destructive` pause for
   developer-supplied confirmation. Confirmation UI is always rendered from
   validated args — never from LLM-generated text.
@@ -42,14 +53,32 @@ pnpm build
 pnpm test
 ```
 
-Run the demo:
+Run a demo:
 
 ```bash
 pnpm dev
 # open http://localhost:5173
 ```
 
-The demo will prompt for an LLM endpoint, model, and optional API key. It
+There are two demos — `apps/demo` (task manager) and `apps/bundled-demo`
+(bundled-tools showcase) — and both Vite dev servers default to port 5173, so
+`pnpm dev` will start one there and bump the other to the next free port. To run
+just one, work in its directory:
+
+```bash
+cd apps/bundled-demo && pnpm dev      # the showcase
+# or
+cd apps/demo && pnpm dev              # the task manager
+```
+
+`apps/bundled-demo` imports `@forgewisp/bundled-tools` via the workspace symlink
+to its `dist/`, so build (or `dev`-watch) the package first:
+
+```bash
+pnpm --filter @forgewisp/bundled-tools build
+```
+
+Each demo will prompt for an LLM endpoint, model, and optional API key. It
 persists these to `localStorage` under `forgewisp.demo.config` and reuses them on
 reload; clear that key (or use the config overlay) to reconfigure.
 

@@ -1,0 +1,564 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161a22;
+  --panel-2: #1c2230;
+  --border: #2a3142;
+  --text: #e6e8ee;
+  --muted: #8b93a7;
+  --accent: #6aa6ff;
+  --danger: #ff6b6b;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: 100vh;
+}
+
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.sidebar h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.subtitle {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sidebar h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 16px 0 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar h2 button {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#audit-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ─── Toolkit sidebar ────────────────────────────────────────────────────── */
+
+.tools-section {
+  margin-bottom: 12px;
+}
+
+.tier-group {
+  margin-bottom: 10px;
+}
+
+.tier-group h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tier-badge {
+  display: inline-block;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.tier-read .tier-badge {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--ok);
+}
+.tier-write .tier-badge {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--warn);
+}
+.tier-destructive .tier-badge {
+  background: rgba(255, 107, 107, 0.15);
+  color: var(--danger);
+}
+
+.tier-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tier-group li {
+  padding: 4px 8px;
+  margin-bottom: 3px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.tool-name {
+  color: var(--accent);
+  font-weight: 500;
+  display: block;
+}
+
+.tool-desc {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  display: block;
+  margin-top: 2px;
+}
+
+/* ─── Artifacts panel ─────────────────────────────────────────────────────── */
+
+.artifacts-section {
+  margin-bottom: 12px;
+}
+
+#artifacts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.artifact {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.artifact strong {
+  color: var(--accent);
+}
+
+.artifact .meta {
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+.artifact a {
+  color: var(--accent);
+  text-decoration: underline;
+  margin-left: 6px;
+}
+
+.artifact-error {
+  border-left-color: var(--danger);
+}
+
+.artifact-error strong {
+  color: var(--danger);
+}
+
+.battery-gauge {
+  display: inline-block;
+  width: 36px;
+  height: 10px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.battery-gauge > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+/* ─── Reasoning ───────────────────────────────────────────────────────────── */
+
+.reasoning-section {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+
+#reasoning-output {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: var(--muted);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ─── Audit log ───────────────────────────────────────────────────────────── */
+
+.audit-event {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-fn {
+  color: var(--accent);
+  font-weight: 500;
+}
+.audit-type {
+  color: var(--muted);
+}
+.audit-detail {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-validation-failed .audit-type,
+.audit-function-errored .audit-type,
+.audit-confirmation-rejected .audit-type {
+  color: var(--danger);
+}
+
+.audit-confirmation-accepted .audit-type,
+.audit-function-executed .audit-type {
+  color: var(--ok);
+}
+
+/* ─── Chat ────────────────────────────────────────────────────────────────── */
+
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.message-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #0a0d12;
+}
+
+.message-assistant {
+  align-self: flex-start;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  white-space: normal;
+}
+
+.message-assistant > *:first-child {
+  margin-top: 0;
+}
+.message-assistant > *:last-child {
+  margin-bottom: 0;
+}
+.message-assistant p {
+  margin: 0 0 8px;
+}
+.message-assistant h1,
+.message-assistant h2,
+.message-assistant h3 {
+  margin: 10px 0 6px;
+  line-height: 1.25;
+}
+.message-assistant h1 {
+  font-size: 18px;
+}
+.message-assistant h2 {
+  font-size: 16px;
+}
+.message-assistant h3 {
+  font-size: 14px;
+}
+.message-assistant ul,
+.message-assistant ol {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+}
+.message-assistant li {
+  margin: 2px 0;
+}
+.message-assistant a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.message-assistant strong {
+  font-weight: 600;
+}
+.message-assistant code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.message-assistant pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.message-assistant pre code {
+  background: none;
+  padding: 0;
+  font-size: 12px;
+}
+.message-assistant blockquote {
+  margin: 8px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.message-assistant hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+.message-assistant table {
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+.message-assistant th,
+.message-assistant td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+.message-assistant.streaming::after {
+  content: '▋';
+  animation: blink 1s steps(2) infinite;
+  color: var(--muted);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* "Thinking…" placeholder shown between submit and the first streamed token. */
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+}
+.thinking-indicator .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  display: inline-block;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+.thinking-indicator .dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.thinking-indicator .dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes thinking-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+#chat-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+#chat-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.chat-form button {
+  padding: 10px 18px;
+  background: var(--accent);
+  color: #0a0d12;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ─── Overlays ────────────────────────────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.confirm-dialog {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  width: 420px;
+  max-width: 90vw;
+}
+
+.confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.confirm-dialog p {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.confirm-args {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.confirm-args div {
+  margin-bottom: 4px;
+}
+
+.confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-confirm,
+.btn-cancel {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-confirm {
+  background: var(--danger);
+  color: #0a0d12;
+  border-color: var(--danger);
+}
+
+.btn-cancel {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+#config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#config-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#config-form input {
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.hidden {
+  display: none !important;
+}

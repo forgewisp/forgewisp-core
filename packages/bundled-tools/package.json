@@ -1,7 +1,7 @@
 {
-  "name": "@forgewisp/core",
+  "name": "@forgewisp/bundled-tools",
   "version": "0.2.0",
-  "description": "Safe, function-calling AI agents for the browser",
+  "description": "Browser-safe, ready-to-register FunctionDefinition tools for Forgewisp agents",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -26,21 +26,19 @@
     "lint": "eslint --config ../../eslint.config.mjs src tests"
   },
   "dependencies": {
-    "ajv": "^8.17.1"
+    "@forgewisp/core": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
     "vitest": "^1.6.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "jsdom": "^25.0.0"
   },
   "keywords": [
     "ai-agent",
     "function-calling",
     "tool-use",
-    "json-schema",
-    "openai",
-    "streaming",
-    "browser",
-    "audit-log"
+    "forgewisp",
+    "bundled-tools"
   ]
 }

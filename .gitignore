@@ -32,3 +32,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Cross-session progress notes (not shared)
+PROGRESS.md

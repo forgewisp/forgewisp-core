@@ -7,14 +7,17 @@
       "inputs": ["src/**", "tsup.config.ts", "package.json", "tsconfig.json"]
     },
     "test": {
+      "dependsOn": ["^build"],
       "outputs": [],
       "inputs": ["src/**", "tests/**", "vitest.config.ts", "package.json", "tsconfig.json"]
     },
     "typecheck": {
+      "dependsOn": ["^build"],
       "outputs": [],
       "inputs": ["src/**", "tests/**", "tsconfig.json", "package.json"]
     },
     "lint": {
+      "dependsOn": ["^build"],
       "outputs": [],
       "inputs": ["src/**", "tests/**", ".eslintrc.json", "tsconfig.json", "package.json"]
     },
