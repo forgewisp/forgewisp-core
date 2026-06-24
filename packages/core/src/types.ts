@@ -35,12 +35,26 @@ export type RiskTier = 'read' | 'write' | 'destructive';
 
 // ─── Function Registration ───────────────────────────────────────────────────
 
+/**
+ * Per-call context passed to a tool handler alongside its validated args. Carries the
+ * parent run's `AbortSignal` so a handler can abort long-running work (e.g. a subagent's
+ * own `run`) when the parent run is aborted. The executor threads the run signal here.
+ *
+ * Handlers may ignore this parameter entirely — a handler declared as `(args) => ...` is
+ * assignable to `(args, context) => ...` (fewer params are always assignable), so existing
+ * handlers keep working unchanged.
+ */
+export interface ToolContext {
+  /** The parent run's abort signal, if `agent.run` was called with one. */
+  signal?: AbortSignal;
+}
+
 export interface FunctionDefinition<TArgs = Record<string, unknown>> {
   name: string;
   description: string;
   parameters: JSONSchema;
   riskTier: RiskTier;
-  handler: (args: TArgs) => unknown;
+  handler: (args: TArgs, context?: ToolContext) => unknown;
 }
 
 // ─── Tool Sets ───────────────────────────────────────────────────────────────

@@ -12,6 +12,17 @@ export function createAgent(config: ForgewispConfig): ForgewispAgent {
 
 export { defineToolSet } from './tool-set.js';
 
+// Subagent orchestration factory. Builds + runs a fresh subagent per `spawnSubagent` call
+// from a declarative config (no consumer-written spawn closure). Lives in core because it
+// needs `createAgent` at runtime (a same-package call). See `subagent-tool.ts` for the
+// risk-tier rationale, recursion guard, and abort-signal notes.
+export { createSubagentTool } from './subagent-tool.js';
+export type {
+  SubagentToolConfig,
+  SpawnSubagentArgs,
+  SpawnSubagentResult,
+} from './subagent-tool.js';
+
 export type {
   ForgewispConfig,
   AuditConfig,
@@ -28,4 +39,5 @@ export type {
   AgentReasoning,
   StreamingConfig,
   ReasoningMode,
+  ToolContext,
 } from './types.js';

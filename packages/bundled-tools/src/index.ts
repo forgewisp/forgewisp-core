@@ -92,6 +92,12 @@ export type { DeletePlanArgs, DeletePlanResult } from './tools/index.js';
 // it is an internal helper, like `eval-math.ts`).
 export type { Plan, PlanItem, PlanStatus, PlanPriority, PlanSummary } from './plan-store.js';
 
+// NOTE: the subagent orchestration factory (`createSubagentTool`) used to live here. It has
+// moved to `@forgewisp/core`: the factory builds + runs a fresh subagent per call, which needs
+// `createAgent` at runtime — a same-package call in core, but a cross-package runtime dep
+// here that would break this package's types-only/self-contained-IIFE relationship with core.
+// Import it from `@forgewisp/core` instead.
+
 import { getCurrentTime } from './tools/index.js';
 import { generateUuid } from './tools/index.js';
 import { evaluateMath } from './tools/index.js';

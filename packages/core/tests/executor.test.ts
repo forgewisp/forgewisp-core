@@ -42,9 +42,31 @@ describe('executeToolCalls', () => {
       baseConfig,
     );
 
-    expect(handler).toHaveBeenCalledWith({ id: '123' });
+    expect(handler).toHaveBeenCalledWith({ id: '123' }, { signal: undefined });
     expect(executed).toHaveLength(1);
     expect(aborted).toHaveLength(0);
+  });
+
+  it('threads the run AbortSignal into the handler context', async () => {
+    const handler = vi.fn().mockResolvedValue({ result: 'ok' });
+    registry.register({
+      name: 'readData',
+      description: 'Read',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      handler,
+    });
+
+    const controller = new AbortController();
+    await executeToolCalls(
+      [makeToolCall('readData', { id: '123' })],
+      registry,
+      audit,
+      baseConfig,
+      controller.signal,
+    );
+
+    expect(handler).toHaveBeenCalledWith({ id: '123' }, { signal: controller.signal });
   });
 
   it('calls onConfirmRequired for write-tier and executes if accepted', async () => {
