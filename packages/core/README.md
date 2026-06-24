@@ -1,5 +1,10 @@
 # `@forgewisp/core`
 
+[![GitHub stars](https://img.shields.io/github/stars/forgewisp/forgewisp-core?style=social)](https://github.com/forgewisp/forgewisp-core)
+[![GitHub repo](https://img.shields.io/badge/repo-forgewisp%2Fforgewisp--core-blue)](https://github.com/forgewisp/forgewisp-core)
+
+> ⭐ **Found Forgewisp useful? [Star the repo](https://github.com/forgewisp/forgewisp-core) on GitHub.**
+
 > Safe, function-calling AI agents for the browser. Register your existing
 > frontend functions as tools, get JSON Schema validation, a risk-tier
 > execution model (`read` / `write` / `destructive`), OpenAI-compatible

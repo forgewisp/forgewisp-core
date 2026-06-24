@@ -1,5 +1,10 @@
 # `@forgewisp/bundled-tools`
 
+[![GitHub stars](https://img.shields.io/github/stars/forgewisp/forgewisp-core?style=social)](https://github.com/forgewisp/forgewisp-core)
+[![GitHub repo](https://img.shields.io/badge/repo-forgewisp%2Fforgewisp--core-blue)](https://github.com/forgewisp/forgewisp-core)
+
+> ⭐ **Found Forgewisp useful? [Star the repo](https://github.com/forgewisp/forgewisp-core) on GitHub.**
+
 > A catalog of browser-safe, ready-to-register `FunctionDefinition` tools for
 > [Forgewisp](https://github.com/forgewisp/forgewisp-core) agents — time, UUIDs,
 > safe math, hashing, base64, viewport/battery/localStorage reads, clipboard,
