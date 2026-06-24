@@ -1,6 +1,20 @@
 // Re-export the core types this package is built around so consumers can import
 // everything they need from one place. Type-only re-exports don't affect treeshaking.
-export type { FunctionDefinition, RiskTier, JSONSchema, JSONSchemaProperty } from '@forgewisp/core';
+export type {
+  FunctionDefinition,
+  ToolSet,
+  RiskTier,
+  JSONSchema,
+  JSONSchemaProperty,
+} from '@forgewisp/core';
+
+// Type-only import for the local `ToolSet` annotation below. This MUST stay
+// type-only: a runtime value import from `@forgewisp/core` would force the
+// IIFE/global build (which inlines all deps) to resolve core's `dist`, racing
+// with core's own `clean: true` watch under `turbo dev --parallel`. Keeping the
+// relationship types-only preserves the original "no runtime import of core"
+// property so the IIFE build stays self-contained.
+import type { ToolSet } from '@forgewisp/core';
 
 export { defineTool } from './define-tool.js';
 
@@ -52,6 +66,32 @@ export type { GetGeolocationArgs, GetGeolocationResult } from './tools/index.js'
 export { removeLocalStorageItem } from './tools/index.js';
 export type { RemoveLocalStorageItemArgs, RemoveLocalStorageItemResult } from './tools/index.js';
 
+// Planning tools (agent job-tracking scratchpad persisted in localStorage).
+export { listPlans } from './tools/index.js';
+export type { ListPlansArgs, ListPlansResult } from './tools/index.js';
+
+export { getPlan } from './tools/index.js';
+export type { GetPlanArgs, GetPlanResult } from './tools/index.js';
+
+export { createPlan } from './tools/index.js';
+export type { CreatePlanArgs, CreatePlanResult, CreatePlanItemInput } from './tools/index.js';
+
+export { addPlanItem } from './tools/index.js';
+export type { AddPlanItemArgs, AddPlanItemResult } from './tools/index.js';
+
+export { updatePlanItem } from './tools/index.js';
+export type { UpdatePlanItemArgs, UpdatePlanItemResult } from './tools/index.js';
+
+export { removePlanItem } from './tools/index.js';
+export type { RemovePlanItemArgs, RemovePlanItemResult } from './tools/index.js';
+
+export { deletePlan } from './tools/index.js';
+export type { DeletePlanArgs, DeletePlanResult } from './tools/index.js';
+
+// Shared plan domain types (the store module itself is not re-exported as a value —
+// it is an internal helper, like `eval-math.ts`).
+export type { Plan, PlanItem, PlanStatus, PlanPriority, PlanSummary } from './plan-store.js';
+
 import { getCurrentTime } from './tools/index.js';
 import { generateUuid } from './tools/index.js';
 import { evaluateMath } from './tools/index.js';
@@ -68,6 +108,13 @@ import { downloadFile } from './tools/index.js';
 import { setLocalStorageItem } from './tools/index.js';
 import { getGeolocation } from './tools/index.js';
 import { removeLocalStorageItem } from './tools/index.js';
+import { listPlans } from './tools/index.js';
+import { getPlan } from './tools/index.js';
+import { createPlan } from './tools/index.js';
+import { addPlanItem } from './tools/index.js';
+import { updatePlanItem } from './tools/index.js';
+import { removePlanItem } from './tools/index.js';
+import { deletePlan } from './tools/index.js';
 
 /**
  * Every bundled tool, ready to register. Use:
@@ -92,6 +139,16 @@ export const BUNDLED_TOOLS = [
   getBatteryInfo,
   listLocalStorageKeys,
   getLocalStorageItem,
+  // read — agent job-tracking scratchpad (forgewisp.plans); see plan-store.ts.
+  // read-tier by exception: agent-owned, bounded, schema-validated scratchpad,
+  // so the agent self-manages its job without onConfirmRequired prompts.
+  listPlans,
+  getPlan,
+  createPlan,
+  addPlanItem,
+  updatePlanItem,
+  removePlanItem,
+  deletePlan,
   // write
   copyToClipboard,
   speakText,
@@ -101,3 +158,24 @@ export const BUNDLED_TOOLS = [
   // destructive
   removeLocalStorageItem,
 ] as const;
+
+/**
+ * The 7 plan-management tools as a ready-to-register `ToolSet`:
+ * `listPlans`, `getPlan`, `createPlan`, `addPlanItem`, `updatePlanItem`,
+ * `removePlanItem`, `deletePlan`. All read-tier by exception (agent-owned scratchpad;
+ * see plan-store.ts header), so the agent self-manages them with no `onConfirmRequired`
+ * prompts. Register in one call:
+ *
+ *   agent.registerToolSet(PLANNING_TOOLS);
+ *
+ * Built as a plain `ToolSet`-typed literal (not via `defineToolSet`) so this package
+ * keeps a types-only relationship with `@forgewisp/core` — see the import note above.
+ * The heterogeneous tuple is assignable to `readonly FunctionDefinition<never>[]`
+ * without a cast (handler contravariance + `never` as the covariant read type).
+ * Compose with other tools by spreading `.tools` into a `defineToolSet` call.
+ */
+export const PLANNING_TOOLS: ToolSet = {
+  name: 'planning',
+  description: 'Agent job-tracking scratchpad persisted in localStorage.',
+  tools: [listPlans, getPlan, createPlan, addPlanItem, updatePlanItem, removePlanItem, deletePlan],
+};

@@ -60,3 +60,25 @@ export type {
   RemoveLocalStorageItemArgs,
   RemoveLocalStorageItemResult,
 } from './remove-local-storage-item.js';
+
+// Planning tools (agent job-tracking scratchpad persisted in localStorage).
+export { listPlans } from './list-plans.js';
+export type { ListPlansArgs, ListPlansResult } from './list-plans.js';
+
+export { getPlan } from './get-plan.js';
+export type { GetPlanArgs, GetPlanResult } from './get-plan.js';
+
+export { createPlan } from './create-plan.js';
+export type { CreatePlanArgs, CreatePlanResult, CreatePlanItemInput } from './create-plan.js';
+
+export { addPlanItem } from './add-plan-item.js';
+export type { AddPlanItemArgs, AddPlanItemResult } from './add-plan-item.js';
+
+export { updatePlanItem } from './update-plan-item.js';
+export type { UpdatePlanItemArgs, UpdatePlanItemResult } from './update-plan-item.js';
+
+export { removePlanItem } from './remove-plan-item.js';
+export type { RemovePlanItemArgs, RemovePlanItemResult } from './remove-plan-item.js';
+
+export { deletePlan } from './delete-plan.js';
+export type { DeletePlanArgs, DeletePlanResult } from './delete-plan.js';
