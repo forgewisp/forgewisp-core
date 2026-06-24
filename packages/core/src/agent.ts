@@ -9,6 +9,7 @@ import {
   ChatMessage,
   FunctionDefinition,
   ForgewispConfig,
+  ToolSet,
 } from './types.js';
 import type { LLMMessage } from './wire.js';
 
@@ -50,6 +51,15 @@ export class ForgewispAgent {
       );
     }
     this.registry.register(def as FunctionDefinition);
+  }
+
+  /**
+   * Register every tool in a ToolSet in one call. Delegates to `registerFunction`, so the
+   * write/destructive tier invariant (onConfirmRequired must be configured) is enforced
+   * per-tool, in input order — the first write/destructive tool without a handler throws.
+   */
+  registerToolSet(set: ToolSet): void {
+    for (const def of set.tools) this.registerFunction(def);
   }
 
   deregisterFunction(name: string): void {

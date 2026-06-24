@@ -43,6 +43,27 @@ export interface FunctionDefinition<TArgs = Record<string, unknown>> {
   handler: (args: TArgs) => unknown;
 }
 
+// ─── Tool Sets ───────────────────────────────────────────────────────────────
+
+/**
+ * A named, ordered group of tools registered together in a single call
+ * (`agent.registerToolSet(set)`). `tools` is typed with the covariant read type
+ * `FunctionDefinition<never>` so a heterogeneous array of `FunctionDefinition<SpecificArgs>`
+ * tools is accepted without a per-call cast: the handler is contravariant in `TArgs`, and
+ * `never` is the bottom type, so every specific tool is assignable to `FunctionDefinition<never>`.
+ * Registration erases to `FunctionDefinition` internally, exactly as `registerFunction`
+ * already does — runtime behavior is unchanged.
+ *
+ * Build one with the `defineToolSet` helper, or compose new sets from existing tools and other
+ * sets by spreading their `.tools`:
+ *   defineToolSet({ name: 'mixed', tools: [...SOME_SET.tools, anotherTool] })
+ */
+export interface ToolSet {
+  readonly name: string;
+  readonly description?: string;
+  readonly tools: readonly FunctionDefinition<never>[];
+}
+
 // ─── Pending Call ────────────────────────────────────────────────────────────
 
 export interface PendingCall {

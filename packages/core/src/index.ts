@@ -10,11 +10,14 @@ export function createAgent(config: ForgewispConfig): ForgewispAgent {
   return new ForgewispAgent(config);
 }
 
+export { defineToolSet } from './tool-set.js';
+
 export type {
   ForgewispConfig,
   AuditConfig,
   ChatMessage,
   FunctionDefinition,
+  ToolSet,
   RiskTier,
   JSONSchema,
   JSONSchemaProperty,

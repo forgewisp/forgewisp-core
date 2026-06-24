@@ -1,6 +1,20 @@
 // Re-export the core types this package is built around so consumers can import
 // everything they need from one place. Type-only re-exports don't affect treeshaking.
-export type { FunctionDefinition, RiskTier, JSONSchema, JSONSchemaProperty } from '@forgewisp/core';
+export type {
+  FunctionDefinition,
+  ToolSet,
+  RiskTier,
+  JSONSchema,
+  JSONSchemaProperty,
+} from '@forgewisp/core';
+
+// Type-only import for the local `ToolSet` annotation below. This MUST stay
+// type-only: a runtime value import from `@forgewisp/core` would force the
+// IIFE/global build (which inlines all deps) to resolve core's `dist`, racing
+// with core's own `clean: true` watch under `turbo dev --parallel`. Keeping the
+// relationship types-only preserves the original "no runtime import of core"
+// property so the IIFE build stays self-contained.
+import type { ToolSet } from '@forgewisp/core';
 
 export { defineTool } from './define-tool.js';
 
@@ -144,3 +158,24 @@ export const BUNDLED_TOOLS = [
   // destructive
   removeLocalStorageItem,
 ] as const;
+
+/**
+ * The 7 plan-management tools as a ready-to-register `ToolSet`:
+ * `listPlans`, `getPlan`, `createPlan`, `addPlanItem`, `updatePlanItem`,
+ * `removePlanItem`, `deletePlan`. All read-tier by exception (agent-owned scratchpad;
+ * see plan-store.ts header), so the agent self-manages them with no `onConfirmRequired`
+ * prompts. Register in one call:
+ *
+ *   agent.registerToolSet(PLANNING_TOOLS);
+ *
+ * Built as a plain `ToolSet`-typed literal (not via `defineToolSet`) so this package
+ * keeps a types-only relationship with `@forgewisp/core` — see the import note above.
+ * The heterogeneous tuple is assignable to `readonly FunctionDefinition<never>[]`
+ * without a cast (handler contravariance + `never` as the covariant read type).
+ * Compose with other tools by spreading `.tools` into a `defineToolSet` call.
+ */
+export const PLANNING_TOOLS: ToolSet = {
+  name: 'planning',
+  description: 'Agent job-tracking scratchpad persisted in localStorage.',
+  tools: [listPlans, getPlan, createPlan, addPlanItem, updatePlanItem, removePlanItem, deletePlan],
+};

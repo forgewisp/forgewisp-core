@@ -1,23 +1,16 @@
-import { createAgent } from '@forgewisp/core';
+import { createAgent, defineToolSet } from '@forgewisp/core';
 import type {
   AgentResult,
   AuditEvent,
   ChatMessage,
-  FunctionDefinition,
   PendingCall,
   ForgewispConfig,
 } from '@forgewisp/core';
 import {
-  createPlan,
-  listPlans,
-  getPlan,
-  addPlanItem,
-  updatePlanItem,
-  removePlanItem,
-  deletePlan,
   getCurrentTime,
   generateUuid,
   downloadFile,
+  PLANNING_TOOLS,
 } from '@forgewisp/bundled-tools';
 import {
   renderArgsHtml,
@@ -377,33 +370,24 @@ let currentTurnStreamingText: TurnStreamingState | null = null;
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-// The planning tools plus two read helpers. `BUNDLED_TOOLS` is a heterogeneous
-// readonly tuple of `FunctionDefinition<SpecificArgs>` for various arg shapes;
-// the same is true of this curated sub-list. Iterating it yields the union of
-// those types, which the generic `registerFunction<TArgs>` can't infer a
-// single `TArgs` for (the handler is contravariant, and interfaces like
-// `CreatePlanArgs` aren't assignable to `Record<string, unknown>`). Erase to
-// the defaulted `FunctionDefinition` once — the core itself casts to this same
-// type when storing in the registry.
-const TOOLS = [
-  // read — all plan tools are read-tier by exception (agent-owned scratchpad;
-  // see plan-store.ts header), so the agent self-manages them with no prompts.
-  getCurrentTime,
-  generateUuid,
-  listPlans,
-  getPlan,
-  createPlan,
-  addPlanItem,
-  updatePlanItem,
-  removePlanItem,
-  deletePlan,
-  // write — download the finished document as the last step of the example
-  // task. Triggers the confirm flow (rendered from schema-validated args).
-  downloadFile,
-] as unknown as readonly FunctionDefinition[];
+// Extras registered alongside the planning set: getCurrentTime/generateUuid for
+// general use, downloadFile (write-tier) as the example task's final step —
+// triggers the confirm flow rendered from schema-validated args. Grouped as a
+// ToolSet so registration is a single call and the heterogeneous-args tuple
+// needs no `as unknown as` cast (defineToolSet erases via FunctionDefinition<never>).
+const EXTRA_TOOLS = defineToolSet({
+  name: 'planning-extras',
+  description: 'Time/UUID helpers plus file download for the example task.',
+  tools: [getCurrentTime, generateUuid, downloadFile],
+});
+
+// The full toolkit surfaced in the sidebar: the planning set plus the extras.
+const SIDEBAR_TOOLS = [...PLANNING_TOOLS.tools, ...EXTRA_TOOLS.tools];
 
 function registerTools(a: Agent): void {
-  for (const def of TOOLS) a.registerFunction(def);
+  // Register the 7 plan-management tools plus the extras, each set in one call.
+  a.registerToolSet(PLANNING_TOOLS);
+  a.registerToolSet(EXTRA_TOOLS);
 }
 
 // ─── Config overlay ───────────────────────────────────────────────────────────
@@ -551,7 +535,7 @@ function renderExamplePrompts(): void {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
-els.toolsList.innerHTML = renderToolsList(TOOLS);
+els.toolsList.innerHTML = renderToolsList(SIDEBAR_TOOLS);
 renderExamplePrompts();
 
 const stored = loadStoredConfig();
