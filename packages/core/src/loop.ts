@@ -75,6 +75,7 @@ export async function runToolLoop(
       deps.registry,
       deps.audit,
       deps.config,
+      signal,
     );
 
     allExecuted.push(...executed);

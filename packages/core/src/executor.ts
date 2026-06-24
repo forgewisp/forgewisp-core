@@ -46,6 +46,7 @@ export async function executeToolCalls(
   registry: FunctionRegistry,
   audit: AuditLog,
   config: ForgewispConfig,
+  signal?: AbortSignal,
 ): Promise<{
   toolResults: ExecuteResult[];
   executed: AgentResult['toolCallsExecuted'];
@@ -119,7 +120,7 @@ export async function executeToolCalls(
   // calls run in parallel via Promise.allSettled. Each wrapper buffers its
   // audit events; the post-await flush emits them in input order so the audit
   // log preserves call order even when later calls finish before earlier ones.
-  const outcomes = await Promise.allSettled(ready.map((rc) => runCall(rc, config)));
+  const outcomes = await Promise.allSettled(ready.map((rc) => runCall(rc, config, signal)));
 
   for (const settled of outcomes) {
     if (settled.status !== 'fulfilled') continue;
@@ -135,7 +136,11 @@ export async function executeToolCalls(
   return { toolResults, executed, aborted };
 }
 
-async function runCall(rc: ReadyCall, config: ForgewispConfig): Promise<CallOutcome> {
+async function runCall(
+  rc: ReadyCall,
+  config: ForgewispConfig,
+  signal?: AbortSignal,
+): Promise<CallOutcome> {
   const { call, def, args } = rc;
   const name = def.name;
   const events: BufferedEvent[] = [];
@@ -223,7 +228,7 @@ async function runCall(rc: ReadyCall, config: ForgewispConfig): Promise<CallOutc
   }
 
   try {
-    const result = await Promise.resolve(def.handler(args));
+    const result = await Promise.resolve(def.handler(args, { signal }));
     events.push({
       type: 'function_executed',
       functionName: name,

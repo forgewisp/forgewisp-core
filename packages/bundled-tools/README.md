@@ -76,6 +76,21 @@ types, e.g. `import { getCurrentTime, type GetCurrentTimeResult }`.
 | `listLocalStorageKeys` | `listLocalStorageKeys` | All keys in this origin's `localStorage`.                              |
 | `getLocalStorageItem` | `getLocalStorageItem` | One `localStorage` value by key (`{ exists: false }` if absent).       |
 
+The catalog also includes seven **agent planning tools** — a job-tracking
+scratchpad persisted in `localStorage` under `forgewisp.plans`. They are
+`read`-tier **by exception** (agent-owned, bounded, schema-validated scratchpad
+the agent self-manages, so no `onConfirmRequired` prompts):
+
+| Tool             | Name             | Description                                                            |
+| ---------------- | ---------------- | --------------------------------------------------------------------- |
+| `listPlans`      | `listPlans`      | Summaries of all plans (id, title, status, counts).                   |
+| `getPlan`        | `getPlan`        | One plan with its items.                                               |
+| `createPlan`     | `createPlan`     | Create a plan with title/priority and initial items.                  |
+| `addPlanItem`    | `addPlanItem`    | Append an item to a plan.                                              |
+| `updatePlanItem` | `updatePlanItem` | Update an item's text/status/priority.                                |
+| `removePlanItem` | `removePlanItem` | Remove an item from a plan.                                           |
+| `deletePlan`     | `deletePlan`     | Delete a plan and its items.                                          |
+
 ### `write`
 
 | Tool                 | Name                | Description                                                                |
@@ -107,6 +122,25 @@ agent.registerFunction(getCurrentTime);
 agent.registerFunction(evaluateMath);
 agent.registerFunction(setLocalStorageItem);
 ```
+
+## Planning tools
+
+The seven plan-management tools are also exported as a ready-to-register
+`ToolSet` named `PLANNING_TOOLS` (`listPlans`, `getPlan`, `createPlan`,
+`addPlanItem`, `updatePlanItem`, `removePlanItem`, `deletePlan`). Register them
+in one call with `agent.registerToolSet` (a method on the agent from
+`@forgewisp/core`):
+
+```ts
+import { PLANNING_TOOLS } from '@forgewisp/bundled-tools';
+
+agent.registerToolSet(PLANNING_TOOLS);
+```
+
+These seven tools are members of `BUNDLED_TOOLS`, so registering the whole
+catalog (the Quick start above) registers them too — `PLANNING_TOOLS` is for
+consumers who want just the planning scratchpad. `apps/planning-demo` exercises
+them end-to-end.
 
 ## Risk tiers
 

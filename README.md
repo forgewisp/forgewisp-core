@@ -11,12 +11,19 @@
 - **[`packages/bundled-tools`](packages/bundled-tools)** — `@forgewisp/bundled-tools`,
   a catalog of ready-to-register browser-effects tools (time, UUIDs, safe math,
   hashing, base64, viewport/battery/localStorage reads, clipboard/speech/download/
-  geolocation/localStorage writes, and a destructive localStorage remove).
+  geolocation/localStorage writes, a destructive localStorage remove, and an agent
+  planning scratchpad persisted in `localStorage`).
 - **[`apps/demo`](apps/demo)** — vanilla TypeScript + Vite demo: a
   task-manager UI driven by an AI agent whose tools mutate local state.
 - **[`apps/bundled-demo`](apps/bundled-demo)** — vanilla TypeScript + Vite showcase
   that registers all of `@forgewisp/bundled-tools` and renders a toolkit sidebar
   plus an artifacts panel fed by the audit log.
+- **[`apps/planning-demo`](apps/planning-demo)** — vanilla TypeScript + Vite demo of
+  the agent planning tools (a job-tracking scratchpad persisted in `localStorage`).
+- **[`apps/subagent-demo`](apps/subagent-demo)** — vanilla TypeScript + Vite
+  orchestration demo: a pure-orchestrator parent agent that delegates read-only
+  sub-tasks to fresh subagents via `spawnSubagent`, with a live "Subagent Runs"
+  board fed by the audit log.
 
 ## Features
 
@@ -44,6 +51,13 @@
     this mode.)
 - **Audit log** of every function request, validation result, confirmation
   outcome, and execution result.
+- **Subagent orchestration** — `createSubagentTool` builds a `spawnSubagent` tool
+  that delegates a self-contained sub-task to a fresh child agent running its own
+  tool loop. Only a trimmed result returns to the parent, so the child's
+  intermediate reasoning and tool calls stay out of the parent's context. The
+  child reuses the parent's connection, confirmation, and audit config — but not
+  its system prompt or streaming UI callbacks. See
+  [`packages/core`](packages/core).
 
 ## Quick start
 
@@ -60,19 +74,25 @@ pnpm dev
 # open http://localhost:5173
 ```
 
-There are two demos — `apps/demo` (task manager) and `apps/bundled-demo`
-(bundled-tools showcase) — and both Vite dev servers default to port 5173, so
-`pnpm dev` will start one there and bump the other to the next free port. To run
-just one, work in its directory:
+There are four apps — `apps/demo` (task manager), `apps/bundled-demo`
+(bundled-tools showcase), `apps/planning-demo` (planning tools), and
+`apps/subagent-demo` (subagent orchestration) — and all Vite dev servers default
+to port 5173, so `pnpm dev` will start one there and bump the others to the next
+free ports. To run just one, work in its directory:
 
 ```bash
 cd apps/bundled-demo && pnpm dev      # the showcase
 # or
 cd apps/demo && pnpm dev              # the task manager
+# or
+cd apps/planning-demo && pnpm dev     # the planning demo
+# or
+cd apps/subagent-demo && pnpm dev     # the subagent orchestration demo
 ```
 
-`apps/bundled-demo` imports `@forgewisp/bundled-tools` via the workspace symlink
-to its `dist/`, so build (or `dev`-watch) the package first:
+`apps/bundled-demo`, `apps/planning-demo`, and `apps/subagent-demo` all import
+`@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, so build
+(or `dev`-watch) the package first:
 
 ```bash
 pnpm --filter @forgewisp/bundled-tools build
@@ -130,9 +150,9 @@ const result = await agent.run('Delete task 2 and list the rest.');
 
 ## Agent API
 
-The public surface is intentionally small — `createAgent` plus the types it
-exposes. Every config field is documented in
-[`packages/core/src/types.ts`](packages/core/src/types.ts); the essentials:
+The public surface is intentionally small — `createAgent`, `createSubagentTool`,
+and `defineToolSet`, plus the types they expose. Every config field is documented
+in [`packages/core/src/types.ts`](packages/core/src/types.ts); the essentials:
 
 - `agent.run(message, options?)` — `options` is
   `{ signal?: AbortSignal; history?: ChatMessage[] }`. `history` lets you warm
@@ -142,6 +162,16 @@ exposes. Every config field is documented in
 - `agent.registerFunction(def)` / `agent.deregisterFunction(name)` /
   `agent.clearAuditLog()`. Registering a `write`/`destructive` tool **throws at
   registration time** if `onConfirmRequired` is not configured.
+- `agent.registerToolSet(set)` — register a named `ToolSet` (built with
+  `defineToolSet`) in one call.
+- Tool handlers receive `(args, context?)` where `context` is a `ToolContext`
+  (`{ signal?: AbortSignal }`) carrying the parent run's `AbortSignal`; long-running
+  handlers can use it to abort. The second arg is optional, so existing one-arg
+  handlers keep working.
+- `createSubagentTool(config)` — build a `spawnSubagent` tool that delegates a
+  sub-task to a fresh child agent and returns a trimmed result. See
+  [`packages/core`](packages/core) for the full config/args/result shapes and the
+  risk-tier rationale.
 - `streaming.onMalformedChunk` — fires when an SSE `data:` line can't be parsed
   as JSON; the stream continues.
 - `audit` config block: `maxEvents` (default 1000, oldest dropped when

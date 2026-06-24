@@ -8,9 +8,9 @@
 
 Forgewisp runs entirely in the browser. It talks directly to any
 OpenAI-compatible chat-completions endpoint (OpenAI, LiteLLM, OpenRouter,
-vLLM, Ollama, …) and exposes a tiny, typed surface: `createAgent` plus the
-types it exports. The only runtime dependency is
-[`ajv`](https://ajv.js.org/) for argument validation.
+vLLM, Ollama, …) and exposes a tiny, typed surface: `createAgent`,
+`createSubagentTool`, and `defineToolSet`, plus the types they export. The only
+runtime dependency is [`ajv`](https://ajv.js.org/) for argument validation.
 
 ## Install
 
@@ -73,10 +73,11 @@ const result = await agent.run('Delete task 2 and list the rest.');
 
 ## API
 
-The public surface is intentionally small — `createAgent` plus the types it
-re-exports. The agent class itself is not exported; name its type with
-`ReturnType<typeof createAgent>`. Every config field is documented inline in
-[`src/types.ts`](src/types.ts); the essentials follow.
+The public surface is intentionally small — `createAgent`, `createSubagentTool`,
+and `defineToolSet`, plus the types they re-export. The agent class itself is not
+exported; name its type with `ReturnType<typeof createAgent>`. Every config
+field is documented inline in [`src/types.ts`](src/types.ts); the essentials
+follow.
 
 ### `createAgent(config: ForgewispConfig): ForgewispAgent`
 
@@ -110,6 +111,19 @@ Register a tool with a `name`, `description`, JSON Schema `parameters`,
 `riskTier`, and `handler`. Registering a `write`/`destructive` tool **throws
 at registration time** if `onConfirmRequired` is not configured.
 
+The `handler` is `(args, context?) => unknown`, where `context` is a `ToolContext`
+(`{ signal?: AbortSignal }`). The signal is the parent run's `AbortSignal`
+(`agent.run({ signal })`), threaded through the tool loop and executor so
+long-running handlers can abort early. The second argument is optional, so
+existing `(args) => …` handlers keep working unchanged.
+
+### `agent.registerToolSet(set)` / `defineToolSet({ name, tools })`
+
+`defineToolSet` bundles a named, reusable `ToolSet` of `FunctionDefinition`s;
+`agent.registerToolSet(set)` registers every tool in it in one call. Useful for
+shipping a coherent group of tools together — `@forgewisp/bundled-tools`
+exports a ready-made `PLANNING_TOOLS` `ToolSet` this way.
+
 ## Risk tiers
 
 A security boundary, not a UX nicety.
@@ -124,6 +138,65 @@ A security boundary, not a UX nicety.
 Tool calls are validated and executed concurrently. Each call's audit events
 are buffered and flushed in input order, so the log preserves call order even
 when later calls finish first.
+
+## Subagents
+
+`createSubagentTool(cfg)` builds a `spawnSubagent` tool that delegates a
+self-contained sub-task to a fresh child agent running its own tool loop. The
+child runs to completion and only a **trimmed** result returns to the parent's
+tool message, so the child's intermediate reasoning and tool calls stay out of
+the parent's context — useful for heavy, isolatable sub-tasks.
+
+The child reuses the parent's connection (`llmEndpoint`, `apiKey`, `model`,
+`requestTimeoutMs`), confirmation (`onConfirmRequired`), and audit
+(`onAuditEvent`, `audit`) config, plus the parent's `streaming.reasoning` mode.
+It deliberately does **not** inherit the parent's `systemPrompt` (a subagent is
+a focused worker) or the parent's `streaming.onTextChunk`/`onReasoningChunk`
+(would pollute the parent's UI).
+
+`SubagentToolConfig` fields:
+
+| Field           | Type                                  | Notes                                                                                          |
+| --------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `config`        | `ForgewispConfig`                     | The parent's config — see reuse rules above.                                                   |
+| `tools`         | `ToolSet \| readonly FunctionDefinition[]` | The tool pool the subagent may use; `spawnSubagent` itself is filtered out (recursion guard). |
+| `systemPrompt?` | `string`                              | Default subagent system prompt; does not inherit the parent's.                                |
+| `maxToolRounds?` | `number`                             | Default cap on the subagent's tool-call rounds.                                               |
+
+`SpawnSubagentArgs` (the LLM-facing args):
+
+- `task: string` (required) — self-contained task; the subagent sees no parent
+  conversation.
+- `tools?: string[]` — names of pool tools to grant (max 20). Omit for the
+  whole pool. Must not include `spawnSubagent`. If the names match nothing, the
+  factory falls back to the whole pool rather than registering zero tools.
+- `systemPrompt?: string` — per-call override.
+- `maxToolRounds?: number` — per-call override (1–40).
+
+`SpawnSubagentResult` (returned to the parent's tool message):
+`response`, `truncated`, `toolCallsExecuted`, `toolCallsAborted`. It
+deliberately drops `reasoning` and the full executed/aborted call arrays — the
+whole point is keeping the parent's context small.
+
+The `spawnSubagent` tool is `read`-tier **by exception**: it is agent-owned
+orchestration control flow, and gating it on `onConfirmRequired` would block the
+loop. The subagent's own `write`/`destructive` tool calls are still gated by the
+reused parent `onConfirmRequired`. The factory also injects the pool's exact
+tool names into the tool `description`, so the parent LLM doesn't guess names
+that don't match registered functions.
+
+```ts
+import { createAgent, createSubagentTool } from '@forgewisp/core';
+
+agent.registerFunction(
+  createSubagentTool({
+    config: parentConfig,
+    tools: SAFE_READ_TOOLS, // a ToolSet or readonly FunctionDefinition[]
+    systemPrompt: 'You are a focused subagent. Return a concise final answer.',
+    maxToolRounds: 15,
+  }),
+);
+```
 
 ## Reasoning stream
 
