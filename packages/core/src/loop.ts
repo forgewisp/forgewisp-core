@@ -84,9 +84,20 @@ export async function runToolLoop(
     for (const result of toolResults) {
       let content: string;
       try {
-        content = result.success
-          ? JSON.stringify(result.result)
-          : JSON.stringify({ error: result.error ?? result.abortReason });
+        if (result.success) {
+          content = JSON.stringify(result.result);
+        } else if (result.abortReason === 'confirmation_rejected') {
+          // The user explicitly declined this tool call in the confirmation
+          // dialog. This is a final user decision, not a transient failure —
+          // tell the model plainly so it doesn't retry or treat it as an error.
+          content =
+            'The user declined to run this tool (cancelled the confirmation ' +
+            'dialog). Do not retry or attempt this action again. Respond to the ' +
+            'user: acknowledge the cancellation, offer an alternative if ' +
+            'appropriate, or continue without it.';
+        } else {
+          content = JSON.stringify({ error: result.error ?? result.abortReason });
+        }
       } catch (err) {
         // Handler returned a non-serializable value (e.g. circular). Don't let
         // it kill the run — fall back to a placeholder and audit the failure.
