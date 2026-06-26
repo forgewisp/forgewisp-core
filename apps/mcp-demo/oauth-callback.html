@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Forgewisp MCP — OAuth callback</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        background: #f7f7f8;
+        color: #222;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e3e3e8;
+        border-radius: 8px;
+        padding: 2rem;
+        max-width: 28rem;
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+      a {
+        color: #2563eb;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Finishing sign-in…</h1>
+      <p id="message">You can close this tab and return to the app.</p>
+    </div>
+    <script>
+      // OAuth redirect-back page. The MCP demo registers `${origin}/oauth-callback.html` as the
+      // provider's `redirectUrl`. The authorization server sends the user here with `code` + `state`
+      // (success) or `error` + `state` (failure).
+      //
+      // Success cases:
+      //   - opened as a popup (window.opener exists): post the code/state back to the opener, which
+      //     calls `handle.finishAuth(code)` on the still-alive handle. Then close the popup.
+      //   - navigated same-tab (no opener — popup was blocked): redirect back to the app root with
+      //     the params preserved, so the app's load-resume path completes via
+      //     `createMcpTools(config, { authorizationCode })`.
+      // Failure case: post/redirect the `error` (+ `state`) back the same way, so the app clears its
+      // pending server and surfaces the failure instead of staying stuck on "Authorizing …".
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var code = params.get('code');
+        var state = params.get('state');
+        var error = params.get('error');
+        var msgEl = document.getElementById('message');
+
+        if (error) {
+          // The authorization server redirected back with an error (e.g. the user denied consent).
+          // Mirror the success branch: tell the opener (popup) or redirect back to the app
+          // (same-tab fallback) so the app can clear its pending server and surface the failure —
+          // otherwise the main UI stays stuck on "Authorizing …" with no idea auth failed.
+          var errorDescription = params.get('error_description');
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(
+              {
+                type: 'forgewisp-mcp-oauth',
+                error: error,
+                state: state,
+                errorDescription: errorDescription,
+              },
+              location.origin,
+            );
+            msgEl.textContent =
+              'Authorization failed: ' +
+              error +
+              (errorDescription ? ' — ' + errorDescription : '') +
+              '. You can close this tab and return to the app.';
+            setTimeout(function () {
+              window.close();
+            }, 200);
+          } else {
+            // Same-tab fallback: redirect back to the app preserving error + state so the
+            // load-resume path surfaces the failure and clears the pending server.
+            var appUrl =
+              location.origin +
+              '/?error=' +
+              encodeURIComponent(error) +
+              '&state=' +
+              encodeURIComponent(state || '');
+            window.location.replace(appUrl);
+          }
+          return;
+        }
+        if (!code || !state) {
+          msgEl.textContent =
+            'No authorization code received. Please close this tab and try again.';
+          return;
+        }
+
+        if (window.opener && !window.opener.closed) {
+          // Same origin (we registered our own callback URL on this origin), so postMessage is safe.
+          window.opener.postMessage(
+            { type: 'forgewisp-mcp-oauth', code: code, state: state },
+            location.origin,
+          );
+          msgEl.textContent = 'Signed in. You can close this tab and return to the app.';
+          setTimeout(function () {
+            window.close();
+          }, 200);
+        } else {
+          // Same-tab fallback: redirect back to the app, preserving the code + state so the
+          // load-resume path can finish the flow.
+          var appUrl =
+            location.origin +
+            '/?code=' +
+            encodeURIComponent(code) +
+            '&state=' +
+            encodeURIComponent(state);
+          window.location.replace(appUrl);
+        }
+      })();
+    </script>
+  </body>
+</html>

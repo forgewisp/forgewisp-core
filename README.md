@@ -18,6 +18,12 @@
   hashing, base64, viewport/battery/localStorage reads, clipboard/speech/download/
   geolocation/localStorage writes, a destructive localStorage remove, and an agent
   planning scratchpad persisted in `localStorage`).
+- **[`packages/mcp`](packages/mcp)** — `@forgewisp/mcp`, an opt-in adapter that
+  connects to an MCP server over the Streamable HTTP transport and adapts its
+  tools into `FunctionDefinition`s registered through the agent's existing path —
+  so core's validation, risk tiers, confirmation, and audit log apply to MCP tools
+  unchanged. Supports OAuth 2.1 + PKCE. Adds `@modelcontextprotocol/sdk` as its
+  only runtime dep (kept out of core for users who don't need MCP).
 - **[`apps/demo`](apps/demo)** — vanilla TypeScript + Vite demo: a
   task-manager UI driven by an AI agent whose tools mutate local state.
 - **[`apps/bundled-demo`](apps/bundled-demo)** — vanilla TypeScript + Vite showcase
@@ -29,6 +35,10 @@
   orchestration demo: a pure-orchestrator parent agent that delegates read-only
   sub-tasks to fresh subagents via `spawnSubagent`, with a live "Subagent Runs"
   board fed by the audit log.
+- **[`apps/mcp-demo`](apps/mcp-demo)** — vanilla TypeScript + Vite showcase of
+  `@forgewisp/mcp`: an MCP-only agent that connects to one or more
+  Streamable-HTTP MCP servers at runtime and drives their tools, with a tier-
+  grouped connected-tools sidebar.
 
 ## Features
 
@@ -79,11 +89,12 @@ pnpm dev
 # open http://localhost:5173
 ```
 
-There are four apps — `apps/demo` (task manager), `apps/bundled-demo`
-(bundled-tools showcase), `apps/planning-demo` (planning tools), and
-`apps/subagent-demo` (subagent orchestration) — and all Vite dev servers default
-to port 5173, so `pnpm dev` will start one there and bump the others to the next
-free ports. To run just one, work in its directory:
+There are five apps — `apps/demo` (task manager), `apps/bundled-demo`
+(bundled-tools showcase), `apps/planning-demo` (planning tools),
+`apps/subagent-demo` (subagent orchestration), and `apps/mcp-demo` (MCP adapter
+showcase) — and all Vite dev servers default to port 5173, so `pnpm dev` will
+start one there and bump the others to the next free ports. To run just one,
+work in its directory:
 
 ```bash
 cd apps/bundled-demo && pnpm dev      # the showcase
@@ -93,14 +104,18 @@ cd apps/demo && pnpm dev              # the task manager
 cd apps/planning-demo && pnpm dev     # the planning demo
 # or
 cd apps/subagent-demo && pnpm dev     # the subagent orchestration demo
+# or
+cd apps/mcp-demo && pnpm dev          # the MCP adapter showcase
 ```
 
 `apps/bundled-demo`, `apps/planning-demo`, and `apps/subagent-demo` all import
-`@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, so build
-(or `dev`-watch) the package first:
+`@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, and
+`apps/mcp-demo` imports `@forgewisp/mcp` the same way, so build (or `dev`-watch)
+the relevant package first:
 
 ```bash
 pnpm --filter @forgewisp/bundled-tools build
+pnpm --filter @forgewisp/mcp build   # only needed for apps/mcp-demo
 ```
 
 Each demo will prompt for an LLM endpoint, model, and optional API key. It
@@ -246,8 +261,10 @@ proxy's master key.
 - Node.js ≥ 18, pnpm ≥ 9.
 - Turborepo for task orchestration.
 - tsup for builds (ESM, CJS, IIFE) — `@forgewisp/core` ships
-  `dist/index.{mjs,cjs,global.js}` + `.d.ts`. Its only runtime dependency is
-  [`ajv`](https://ajv.js.org/).
+  `dist/index.{mjs,cjs,global.js}` + `.d.ts`; its only runtime dependency is
+  [`ajv`](https://ajv.js.org/). `@forgewisp/mcp` ships ESM + CJS only and adds
+  [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk)
+  as its sole runtime dep (deliberately kept out of core).
 - Vitest for tests.
 - ESLint + Prettier for code quality.
 
@@ -255,9 +272,11 @@ proxy's master key.
 
 CI (`.github/workflows/ci.yml`) runs `format:check`, `lint`, `typecheck`,
 `build`, and `test` on Node 20 with `pnpm install --frozen-lockfile`. Releases
-are tag-driven (`v*`): the workflow verifies the tag matches the
-`packages/core/package.json` version, then publishes `@forgewisp/core` to npm
-with provenance and creates a GitHub release. Bump the package version
+are tag-driven (`v*`): the workflow verifies the tag matches **all three**
+package versions (`packages/core`, `packages/bundled-tools`, and
+`packages/mcp` — they version in lockstep), then publishes `@forgewisp/core`,
+`@forgewisp/bundled-tools`, and `@forgewisp/mcp` to npm in that order with
+provenance and creates a GitHub release. Bump all three package versions
 alongside a release tag.
 
 ## License

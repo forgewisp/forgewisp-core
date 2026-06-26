@@ -1,7 +1,7 @@
 {
-  "name": "@forgewisp/core",
+  "name": "@forgewisp/mcp",
   "version": "0.5.0",
-  "description": "Safe, function-calling AI agents for the browser",
+  "description": "Model Context Protocol (MCP) client support for Forgewisp agents — expose an MCP server's tools as agent FunctionDefinitions",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -26,9 +26,13 @@
     "lint": "eslint --config ../../eslint.config.mjs src tests"
   },
   "dependencies": {
-    "ajv": "^8.17.1"
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "peerDependencies": {
+    "@forgewisp/core": "workspace:^"
   },
   "devDependencies": {
+    "@forgewisp/core": "workspace:^",
     "tsup": "^8.0.0",
     "vitest": "^1.6.0",
     "typescript": "^5.4.0"
@@ -37,10 +41,8 @@
     "ai-agent",
     "function-calling",
     "tool-use",
-    "json-schema",
-    "openai",
-    "streaming",
-    "browser",
-    "audit-log"
+    "forgewisp",
+    "mcp",
+    "model-context-protocol"
   ]
 }
