@@ -33,12 +33,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # Verify the git tag matches every publishable package's version before any
-      # publish. Both @forgewisp/core and @forgewisp/bundled-tools version in
-      # lockstep with the release tag, so a mismatch on either fails the run.
+      # publish. @forgewisp/core, @forgewisp/bundled-tools, and @forgewisp/mcp all version in
+      # lockstep with the release tag, so a mismatch on any one fails the run.
       - name: Check tag/version parity
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          for pkg in packages/core packages/bundled-tools; do
+          for pkg in packages/core packages/bundled-tools packages/mcp; do
             PKG_VERSION=$(node -p "require('./$pkg/package.json').version")
             if [ "$TAG" != "$PKG_VERSION" ]; then
               echo "Tag v$TAG does not match $pkg/package.json version $PKG_VERSION"
@@ -69,6 +69,16 @@ jobs:
       # version is already on the registry.
       - name: Publish @forgewisp/bundled-tools to npm
         working-directory: packages/bundled-tools
+        run: pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # @forgewisp/mcp declares both @forgewisp/core and @modelcontextprotocol/sdk
+      # as workspace/registry deps; pnpm publish rewrites `workspace:*` on core to the
+      # resolved version (same reason as bundled-tools). Runs last, after core (and
+      # bundled-tools) are already on the registry.
+      - name: Publish @forgewisp/mcp to npm
+        working-directory: packages/mcp
         run: pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

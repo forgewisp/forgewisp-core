@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    // Resolve the workspace packages to their source so type-checking and
+    // type-checked ESLint work without a prior `build` of @forgewisp/core or
+    // @forgewisp/mcp (whose package.json `types` point at dist/, which is
+    // gitignored and absent in a fresh CI checkout). Vite still bundles from
+    // dist via the workspace symlinks for the actual dev/build output.
+    "baseUrl": ".",
+    "paths": {
+      "@forgewisp/core": ["../../packages/core/src/index.ts"],
+      "@forgewisp/mcp": ["../../packages/mcp/src/index.ts"]
+    }
+  },
+  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

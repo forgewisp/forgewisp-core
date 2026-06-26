@@ -29,6 +29,10 @@
   orchestration demo: a pure-orchestrator parent agent that delegates read-only
   sub-tasks to fresh subagents via `spawnSubagent`, with a live "Subagent Runs"
   board fed by the audit log.
+- **[`apps/mcp-demo`](apps/mcp-demo)** — vanilla TypeScript + Vite showcase of
+  `@forgewisp/mcp`: an MCP-only agent that connects to one or more
+  Streamable-HTTP MCP servers at runtime and drives their tools, with a tier-
+  grouped connected-tools sidebar.
 
 ## Features
 
@@ -79,11 +83,12 @@ pnpm dev
 # open http://localhost:5173
 ```
 
-There are four apps — `apps/demo` (task manager), `apps/bundled-demo`
-(bundled-tools showcase), `apps/planning-demo` (planning tools), and
-`apps/subagent-demo` (subagent orchestration) — and all Vite dev servers default
-to port 5173, so `pnpm dev` will start one there and bump the others to the next
-free ports. To run just one, work in its directory:
+There are five apps — `apps/demo` (task manager), `apps/bundled-demo`
+(bundled-tools showcase), `apps/planning-demo` (planning tools),
+`apps/subagent-demo` (subagent orchestration), and `apps/mcp-demo` (MCP adapter
+showcase) — and all Vite dev servers default to port 5173, so `pnpm dev` will
+start one there and bump the others to the next free ports. To run just one,
+work in its directory:
 
 ```bash
 cd apps/bundled-demo && pnpm dev      # the showcase
@@ -93,14 +98,18 @@ cd apps/demo && pnpm dev              # the task manager
 cd apps/planning-demo && pnpm dev     # the planning demo
 # or
 cd apps/subagent-demo && pnpm dev     # the subagent orchestration demo
+# or
+cd apps/mcp-demo && pnpm dev          # the MCP adapter showcase
 ```
 
 `apps/bundled-demo`, `apps/planning-demo`, and `apps/subagent-demo` all import
-`@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, so build
-(or `dev`-watch) the package first:
+`@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, and
+`apps/mcp-demo` imports `@forgewisp/mcp` the same way, so build (or `dev`-watch)
+the relevant package first:
 
 ```bash
 pnpm --filter @forgewisp/bundled-tools build
+pnpm --filter @forgewisp/mcp build   # only needed for apps/mcp-demo
 ```
 
 Each demo will prompt for an LLM endpoint, model, and optional API key. It

@@ -8,9 +8,10 @@ Forgewisp is a TypeScript library (`@forgewisp/core`) that lets browser apps reg
 functions as tools for an AI agent, with JSON Schema validation, a risk-tier execution model
 (`read` / `write` / `destructive`), OpenAI-compatible streaming, a dual reasoning stream, and an
 audit log. It runs entirely in the browser with no mandatory backend. A companion package
-(`@forgewisp/bundled-tools`) ships a catalog of ready-to-register browser-effects tools, and two
-vanilla-TS demos exercise the library: a task manager (`apps/demo`) and a bundled-tools showcase
-(`apps/bundled-demo`).
+(`@forgewisp/bundled-tools`) ships a catalog of ready-to-register browser-effects tools, and an
+opt-in package (`@forgewisp/mcp`) adapts tools from an MCP server (Streamable HTTP) into
+`FunctionDefinition`s. Two vanilla-TS demos exercise the library: a task manager (`apps/demo`)
+and a bundled-tools showcase (`apps/bundled-demo`).
 
 
 ## Cross-session progress
@@ -150,6 +151,94 @@ consumer to configure `onConfirmRequired` (core throws at registration time othe
 must never render confirmation UI from raw LLM output — only from the schema-validated
 `PendingCall.args`.
 
+### `@forgewisp/mcp` — MCP server adapter
+
+An opt-in workspace package that connects to an MCP server over the **Streamable HTTP** transport
+and adapts its tools into `FunctionDefinition`s registered through the agent's existing
+`registerFunction` path — so core's registry, Ajv validation, two-phase executor,
+`onConfirmRequired` invariant, audit log, and `runToolLoop` all apply to MCP tools unchanged. **Core
+is not modified by this package** and is a types-only/peer dependency here (the adapter builds plain
+`FunctionDefinition` literals and hands them to the caller-provided agent's already-public
+`registerFunction`/`deregisterFunction`; it never instantiates a core class). The only runtime dep
+it adds is `@modelcontextprotocol/sdk` — isolating it in this package keeps users who don't need MCP
+from pulling the SDK into their bundle.
+
+Public surface (`src/index.ts`): `registerMcpServer(agent, config): Promise<McpServerHandle>` and
+`createMcpTools(config, options?): Promise<McpToolsResult>` (the lower-level, agent-free form), plus
+`McpServerConfig`/`McpServerHandle`/`McpAuthState`/`McpConnectOptions`/`McpToolsResult`/`AgentLike`
+types, type-only re-exports from core, and type-only OAuth re-exports from the SDK
+(`OAuthClientProvider` from `client/auth.js`; `OAuthTokens`/`OAuthClientMetadata`/
+`OAuthClientInformationMixed` from `shared/auth.js` — those sub-types live in `shared/auth.js`, not
+`client/auth.js`). `AgentLike` is a structural `{ registerFunction; deregisterFunction }` subset that
+`ReturnType<typeof createAgent>` satisfies — the package never imports the not-exported
+`ForgewispAgent` class. The adapter internals (`adaptMcpTool`/`adaptMcpTools`/`connectMcpServer`/
+`connectClient`/`buildTransport`/`listAndAdapt`/`preflightAndRegister`) live in `src/mcp.ts` and are
+not re-exported.
+
+**OAuth 2.1 + PKCE.** `McpServerConfig.authProvider?: OAuthClientProvider` drives the SDK's
+discovery (RFC 9728/8414/7591), PKCE, token-exchange, and refresh via
+`StreamableHTTPClientTransport`'s `authProvider` option; the consumer implements the provider and
+owns browser-redirect plumbing + token storage. `authProvider` takes precedence over `apiKey` (the
+two are mutually exclusive — if both are set, `authProvider` wins and `apiKey` is ignored). The
+consumer-visible state machine is `McpAuthState = 'authorized' | 'pending'`:
+- A first connect that needs auth returns `authState: 'pending'` with empty tools instead of
+  throwing — the handle/result stays alive with a `finishAuth(authorizationCode): Promise<void>`
+  method. The consumer redirects the user to the authorization server (the SDK has already called
+  `provider.redirectToAuthorization` before surfacing `pending`), then calls `finishAuth(code)` once
+  the redirect-back arrives.
+- **Fresh transport on resume.** `finishAuth(code)` is *not* "reconnect the spent transport." The
+  SDK's `Client.connect` catches the `UnauthorizedError` thrown during the redirect, calls
+  `void this.close()` (which aborts the transport's `_abortController` but does **not** null it),
+  and rethrows — so a second `start()` on that transport throws `"already started"`. The same
+  transport cannot be re-`connect`ed. So `finishAuth(code)` exchanges the code on the spent transport
+  (its `finishAuth` only calls `auth()`, independent of `start()`) to save tokens into the provider,
+  disconnects the spent client, builds a **fresh** transport whose `connect` reads
+  `provider.tokens()` and succeeds, then re-lists tools and splices them into the caller's `tools`
+  array in place. The same fresh-transport pattern backs `McpConnectOptions.authorizationCode` (the
+  page-reload resume path: exchange the code on a fresh transport *before* connecting).
+- `client/auth.js` (and its `UnauthorizedError`) is **dynamically imported only on the OAuth path**
+  — non-OAuth consumers never load the auth module, so it lands in its own dynamic-import chunk
+  (Vite emits a separate `auth-*.js` alongside `streamableHttp-*.js`). `UnauthorizedError` is
+  matched with `instanceof` (the SDK gives it no custom `.name`, so a name check fails).
+- `registerMcpServer` **defers the preflight** when `authState === 'pending'` (no tools to tier yet);
+  the handle's `finishAuth` runs the `hasConfirmation` preflight *after* listing tools, then
+  registers — and on preflight failure deregisters anything already registered, disconnects, and
+  throws the same clear error (mirroring the non-pending preflight semantics). `createMcpTools`
+  returns a `McpToolsResult` (`tools`/`authState`/`close`/`finishAuth`) whose `close`/`finishAuth` are
+  arrow properties (so they destructure cleanly).
+
+Key invariants, all enforced in `src/mcp.ts`:
+- **Risk tiers come from config, not MCP hints.** MCP has no tier concept. `McpServerConfig.defaultTier`
+  (default `read`) + `tierOverrides` map per original tool name. MCP `annotations.readOnlyHint`/
+  `destructiveHint` are informational only and deliberately NOT auto-mapped — the consumer owns the
+  security boundary.
+- **Confirmation preflight.** `registerMcpServer` resolves all tool tiers *before* registering
+  anything; if any maps to `write`/`destructive` and `config.hasConfirmation` is not `true`, it closes
+  the client and throws a clear error (no partial registration). Core's own registration-time
+  invariant still fires as a backstop inside `agent.registerFunction`.
+- **Schema pass-through.** MCP `inputSchema` is full draft-07; core's `JSONSchema` type is a narrow
+  subset that is NOT widened. The adapter casts the raw `inputSchema` to `JSONSchema` at the
+  boundary — runtime is correct because core's Ajv is `strict: false` and the wire payload to the LLM
+  carries the full schema.
+- **Name namespacing.** Registered names are `${prefix}__<sanitized>`, sanitized to OpenAI's
+  `^[A-Za-z0-9_-]{1,64}$`, with numeric suffixes on collision.
+- **Result flattening.** MCP `callTool` results are reduced to a single JSON-serializable value
+  (`structuredContent` preferred, then single text, then joined text, else `{ content }`); `isError`
+  throws so the executor records `function_errored`.
+- **Abort.** The parent run's `AbortSignal` (threaded in via `ToolContext`) is forwarded to
+  `client.callTool`, merged with a per-server `requestTimeoutMs`.
+- **Build:** ESM + CJS only (no IIFE/global build — inlining the MCP SDK into a self-contained global
+  would be heavy and fragile, since it relies on browser-native `fetch`/`EventSource`). Consumers
+  bundle it through their app bundler, which resolves the externalized SDK and peer core.
+
+`StreamableHTTPClientTransport` is loaded via dynamic import inside `connectMcpServer` so the
+transport module is only evaluated when actually connecting over HTTP; `client/auth.js` (and
+`UnauthorizedError`) is dynamically imported only on the OAuth-pending path. Tests use the SDK's
+`InMemoryTransport` via an `@internal` `transport` injection seam on `createMcpTools`/
+`registerMcpServer` (a `Transport` or a `() => Transport | Promise<Transport>` factory — the factory
+form lets the OAuth tests share one in-memory pipe across the gated transports that
+`finishAuth`/resume build); this seam is not part of the stable public contract.
+
 ### `apps/bundled-demo` — the bundled-tools showcase
 
 Vanilla TS + Vite, structurally identical to `apps/demo` (same config overlay, chat form, streaming,
@@ -165,6 +254,45 @@ heterogeneous tuple, `main.ts` erases it once with `as unknown as readonly Funct
 Vite resolves `@forgewisp/bundled-tools` via the workspace symlink to its `dist/`, so build/watch
 the package before running the demo's `dev`.
 
+### `apps/mcp-demo` — the MCP adapter showcase
+
+Vanilla TS + Vite, structurally identical to `apps/bundled-demo` (same config overlay, chat form,
+streaming, reasoning panel, FIFO confirm queue, race guard, conversation threading, DOMPurify
+sanitization) but **MCP-only**: it registers no inline or bundled tools — every tool comes from a
+connected MCP server. A sidebar **MCP Servers** panel lets the user connect/disconnect one or more
+Streamable-HTTP MCP servers at runtime (`#mcp-form` collects name/url/apiKey/`defaultTier`/
+optional `requestTimeoutMs` plus a **Use OAuth** checkbox `#mcp-oauth`; `#mcp-servers-list` shows
+connected-server chips with Disconnect buttons; `#mcp-status` is an `aria-live` status line).
+`main.ts` uses the lower-level `createMcpTools(config, options?)` (not `registerMcpServer`) because
+it returns the adapted `FunctionDefinition[]` — with `name`/`description`/`riskTier` — so the
+tier-grouped `renderToolsList` can render them, while still yielding a `close()` for disconnect and
+a `finishAuth(code)` for OAuth. Each connect passes `hasConfirmation: true` (the demo wires
+`onConfirmRequired`, so the package's preflight never trips and core's registration-time invariant
+is the backstop); `buildAgent` calls `disconnectAllServers()` so a rebuild drops prior servers
+(their tools were on the old agent instance). Server chips are built with the DOM API (not
+innerHTML) so a remote server/tool name can never break an attribute; `renderToolsList` keeps its
+own local DOMPurify allowlist. The shared `renderMarkdown` allowlist (`['href','title']`) **must
+not grow**. There is no per-function artifacts panel (MCP-agnostic; the generic audit log covers
+activity). Vite resolves `@forgewisp/mcp` via the workspace symlink to its `dist/` (the SDK is
+externalized by the package's tsup config and isolated in its `node_modules` by pnpm — the
+production build emits separate `streamableHttp-*.js` and `auth-*.js` dynamic-import chunks), so
+build/watch `@forgewisp/mcp` before running the demo's `dev`.
+
+**OAuth wiring.** `src/oauth.ts` ships `LocalStorageOAuthProvider` (an `OAuthClientProvider`
+backed by `localStorage` under `forgewisp.mcp.oauth.<serverName>`, with
+`redirectUrl = ${origin}/oauth-callback.html`, RFC 7591 dynamic-registration storage, PKCE verifier
+persistence, and a `state()`/`getActiveState()` correlation id). The static
+`apps/mcp-demo/oauth-callback.html` is the provider's `redirectUrl`: it reads `code`+`state` from
+`location.search` and, when opened as a popup (`window.opener`), `postMessage`s them to the opener
+on `location.origin` and closes; with no opener (popup blocked) it `location.replace`s back to the
+app root preserving the params (same-tab fallback). `main.ts` keeps a `Map<state, PendingAuth>` of
+pending OAuth connects, validates `event.origin === location.origin` + `msg.type ===
+'forgewisp-mcp-oauth'` on the `message` listener before calling `handle.finishAuth(code)`, and on
+boot runs a load-resume path via `createMcpTools(config, { authorizationCode: code })` (cleaning
+the URL with `history.replaceState`). Pending server configs are stashed in `localStorage` under
+`forgewisp.mcp.oauthPending.<state>` so the same-tab resume can rebuild them. Disconnecting clears
+the pending entry and the provider's stored tokens (`LocalStorageOAuthProvider.clear`).
+
 ## Conventions worth knowing
 
 - **Risk tiers are a security boundary, not a UX nicety.** Confirmation UI is always rendered
@@ -179,9 +307,11 @@ the package before running the demo's `dev`.
   `*.md` is in `.prettierignore`.
 - **CI (`.github/workflows/ci.yml`)** runs `format:check`, `lint`, `typecheck`, `build`, `test`
   with `pnpm install --frozen-lockfile`. Releases (`release.yml`) are tag-driven (`v*`), verify
-  the tag matches **both** `packages/core/package.json` and
-  `packages/bundled-tools/package.json` (they version in lockstep), then publish `@forgewisp/core`
-  to npm followed by `@forgewisp/bundled-tools` (the latter via `pnpm publish`, which rewrites its
-  `workspace:*` dependency on core to the resolved version) — so bumping both package versions
-  must accompany a release tag.
+  the tag matches **all three** of `packages/core/package.json`,
+  `packages/bundled-tools/package.json`, and `packages/mcp/package.json` (they version in lockstep),
+  then publish `@forgewisp/core`, `@forgewisp/bundled-tools`, and `@forgewisp/mcp` to npm in that
+  order (each later one via `pnpm publish`, which rewrites its `workspace:*` dependency on core to
+  the resolved version) — so bumping all three package versions must accompany a release tag.
 - The only runtime dependency in `@forgewisp/core` is `ajv`. Keep the dep surface minimal.
+  (`@forgewisp/mcp` is the deliberate exception: it adds `@modelcontextprotocol/sdk`, which is why
+  MCP support lives in a separate opt-in package rather than core.)
