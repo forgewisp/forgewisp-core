@@ -18,6 +18,12 @@
   hashing, base64, viewport/battery/localStorage reads, clipboard/speech/download/
   geolocation/localStorage writes, a destructive localStorage remove, and an agent
   planning scratchpad persisted in `localStorage`).
+- **[`packages/mcp`](packages/mcp)** — `@forgewisp/mcp`, an opt-in adapter that
+  connects to an MCP server over the Streamable HTTP transport and adapts its
+  tools into `FunctionDefinition`s registered through the agent's existing path —
+  so core's validation, risk tiers, confirmation, and audit log apply to MCP tools
+  unchanged. Supports OAuth 2.1 + PKCE. Adds `@modelcontextprotocol/sdk` as its
+  only runtime dep (kept out of core for users who don't need MCP).
 - **[`apps/demo`](apps/demo)** — vanilla TypeScript + Vite demo: a
   task-manager UI driven by an AI agent whose tools mutate local state.
 - **[`apps/bundled-demo`](apps/bundled-demo)** — vanilla TypeScript + Vite showcase
@@ -255,8 +261,10 @@ proxy's master key.
 - Node.js ≥ 18, pnpm ≥ 9.
 - Turborepo for task orchestration.
 - tsup for builds (ESM, CJS, IIFE) — `@forgewisp/core` ships
-  `dist/index.{mjs,cjs,global.js}` + `.d.ts`. Its only runtime dependency is
-  [`ajv`](https://ajv.js.org/).
+  `dist/index.{mjs,cjs,global.js}` + `.d.ts`; its only runtime dependency is
+  [`ajv`](https://ajv.js.org/). `@forgewisp/mcp` ships ESM + CJS only and adds
+  [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk)
+  as its sole runtime dep (deliberately kept out of core).
 - Vitest for tests.
 - ESLint + Prettier for code quality.
 
@@ -264,9 +272,11 @@ proxy's master key.
 
 CI (`.github/workflows/ci.yml`) runs `format:check`, `lint`, `typecheck`,
 `build`, and `test` on Node 20 with `pnpm install --frozen-lockfile`. Releases
-are tag-driven (`v*`): the workflow verifies the tag matches the
-`packages/core/package.json` version, then publishes `@forgewisp/core` to npm
-with provenance and creates a GitHub release. Bump the package version
+are tag-driven (`v*`): the workflow verifies the tag matches **all three**
+package versions (`packages/core`, `packages/bundled-tools`, and
+`packages/mcp` — they version in lockstep), then publishes `@forgewisp/core`,
+`@forgewisp/bundled-tools`, and `@forgewisp/mcp` to npm in that order with
+provenance and creates a GitHub release. Bump all three package versions
 alongside a release tag.
 
 ## License
