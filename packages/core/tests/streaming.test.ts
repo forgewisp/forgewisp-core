@@ -384,3 +384,81 @@ describe('streamCompletion — extended reasoning & edge cases', () => {
     expect(result.message.content).toContain('done ');
   });
 });
+
+// ─── Line-ending & framing edge cases ─────────────────────────────────────────
+
+describe('streamCompletion — line-ending & framing edge cases', () => {
+  /** Builds a Response from a raw string (exact bytes, including any line endings). */
+  function rawResponse(raw: string): Response {
+    return new Response(new TextEncoder().encode(raw), { status: 200 });
+  }
+
+  it('parses lines split with CRLF (trim strips the carriage return)', async () => {
+    const config: StreamingConfig = {};
+    const response = rawResponse(`${openAITextChunk('Hello')}\r\n${openAIDone()}\r\n`);
+    const result = await streamCompletion(response, config);
+    // readSSELines splits on '\n' only; the trailing '\r' is removed by `.trim()`
+    // before JSON.parse, so CRLF-framed SSE streams parse correctly.
+    expect(result.message.content).toBe('Hello');
+  });
+
+  it('silently skips `data:` lines that lack the trailing space', async () => {
+    const onMalformedChunk = vi.fn();
+    const config: StreamingConfig = { onMalformedChunk };
+    // 'data:foo' (no space) does not match the 'data: ' guard → skipped silently,
+    // not treated as malformed.
+    const response = rawResponse(`data:foo\n${openAITextChunk('Hello')}\n${openAIDone()}\n`);
+    const result = await streamCompletion(response, config);
+    expect(onMalformedChunk).not.toHaveBeenCalled();
+    expect(result.message.content).toBe('Hello');
+  });
+
+  it('flushes an unclosed tag as reasoning when the stream ends inside a tag', async () => {
+    const config: StreamingConfig = {
+      reasoning: { mode: 'tag-based', tag: 'thinking' },
+    };
+    // Open tag, then reasoning text, no close tag, no [DONE] — the pending text is
+    // in-tag when the stream ends, so the flush routes it to reasoning.
+    const response = mockStreamResponse([openAITextChunk('<thinking>still thinking')]);
+    const result = await streamCompletion(response, config);
+    expect(result.reasoning).toBe('still thinking');
+    expect(result.message.content).toBeNull();
+  });
+
+  it('toggles in and out of reasoning across repeated open/close tags', async () => {
+    const config: StreamingConfig = {
+      reasoning: { mode: 'tag-based', tag: 'a' },
+    };
+    // <a>in1</a><a>in2</a> — the router toggles inTag on each marker, so both
+    // inner spans land in reasoning and no text leaks between them.
+    const response = mockStreamResponse([openAITextChunk('<a>in1</a><a>in2</a>')]);
+    const result = await streamCompletion(response, config);
+    expect(result.reasoning).toBe('in1in2');
+    expect(result.message.content).toBeNull();
+  });
+
+  it('releases the reader when the stream is aborted mid-flight', async () => {
+    const ac = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(openAITextChunk('Hello') + '\n'));
+        // Deliberately do not close — the abort will stop the loop before the
+        // next read() would block.
+      },
+    });
+    const response = new Response(body, { status: 200 });
+
+    const config: StreamingConfig = {
+      // Abort as soon as the first text chunk is routed.
+      onTextChunk: () => ac.abort(),
+    };
+
+    const result = await streamCompletion(response, config, undefined, ac.signal);
+
+    // The one chunk processed before the abort lands in content.
+    expect(result.message.content).toBe('Hello');
+    // The finally block called releaseLock(), so the stream is no longer locked
+    // to a reader (without that finally, body.locked would still be true).
+    expect(body.locked).toBe(false);
+  });
+});

@@ -454,4 +454,200 @@ describe('ForgewispAgent.run', () => {
     const stored = agent.getAuditLog().find((e) => e.type === 'function_requested');
     expect(stored?.args).toEqual({ redacted: true });
   });
+
+  it('confirms and executes a write-tier tool mid-run when onConfirmRequired returns true', async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1)
+          return Promise.resolve(nonStreamResponse(toolCallMessage('save', { value: 'x' })));
+        return Promise.resolve(nonStreamResponse(finalMessage('done')));
+      }),
+    );
+
+    const onConfirmRequired = vi.fn().mockResolvedValue(true);
+    const handler = vi.fn(() => 'saved');
+    const agent = createAgent({ ...baseAgentConfig, onConfirmRequired });
+    agent.registerFunction({
+      name: 'save',
+      description: 'Save',
+      riskTier: 'write',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+      },
+      handler,
+    });
+
+    const result = await agent.run('save x');
+
+    expect(onConfirmRequired).toHaveBeenCalledOnce();
+    // The handler receives schema-validated args, not raw LLM output.
+    expect(handler).toHaveBeenCalledWith({ value: 'x' }, { signal: undefined });
+    expect(result.toolCallsExecuted).toHaveLength(1);
+    expect(result.toolCallsExecuted[0]!.functionName).toBe('save');
+    expect(result.toolCallsExecuted[0]!.result).toBe('saved');
+    expect(result.truncated).toBe(false);
+    expect(result.response).toBe('done');
+  });
+
+  it('surfaces a rejected destructive tool in toolCallsAborted and never calls the handler', async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) return Promise.resolve(nonStreamResponse(toolCallMessage('delete', {})));
+        return Promise.resolve(nonStreamResponse(finalMessage('ok')));
+      }),
+    );
+
+    const handler = vi.fn();
+    const onConfirmRequired = vi.fn().mockResolvedValue(false);
+    const agent = createAgent({ ...baseAgentConfig, onConfirmRequired });
+    agent.registerFunction({
+      name: 'delete',
+      description: 'Delete',
+      riskTier: 'destructive',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler,
+    });
+
+    const result = await agent.run('delete it');
+
+    expect(onConfirmRequired).toHaveBeenCalledOnce();
+    expect(handler).not.toHaveBeenCalled();
+    expect(result.toolCallsAborted).toHaveLength(1);
+    expect(result.toolCallsAborted[0]!.reason).toBe('confirmation_rejected');
+    expect(result.truncated).toBe(false);
+    expect(result.response).toBe('ok');
+  });
+
+  it('omits the Authorization header when no apiKey is configured', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(nonStreamResponse(finalMessage('done'))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const agent = createAgent(baseAgentConfig); // no apiKey
+    await agent.run('hi');
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    const headers = calls[0]![1].headers as Record<string, string>;
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers['Authorization']).toBeUndefined();
+  });
+
+  it('assembles tool calls received over a streaming response and runs the tool', async () => {
+    const encoder = new TextEncoder();
+    const sse = (lines: string[]): Response => {
+      const stream = new ReadableStream({
+        start(controller) {
+          for (const line of lines) controller.enqueue(encoder.encode(line + '\n'));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    };
+
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) {
+          // Fragmented tool-call deltas: name+id in the first chunk, args in the
+          // second (matching how OpenAI splits a tool call across deltas).
+          return Promise.resolve(
+            sse([
+              `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'ping', arguments: '' } }] }, finish_reason: null }] })}`,
+              `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a":1}' } }] }, finish_reason: null }] })}`,
+              'data: [DONE]',
+            ]),
+          );
+        }
+        return Promise.resolve(
+          sse([
+            `data: ${JSON.stringify({ choices: [{ delta: { content: 'all done' } }] })}`,
+            'data: [DONE]',
+          ]),
+        );
+      }),
+    );
+
+    const handler = vi.fn(() => 'pong');
+    const agent = createAgent({ ...baseAgentConfig, streaming: {} });
+    agent.registerFunction({
+      name: 'ping',
+      description: 'Ping',
+      riskTier: 'read',
+      parameters: {
+        type: 'object',
+        properties: { a: { type: 'integer' } },
+        required: ['a'],
+      },
+      handler,
+    });
+
+    const result = await agent.run('ping');
+
+    expect(handler).toHaveBeenCalledWith({ a: 1 }, { signal: undefined });
+    expect(result.toolCallsExecuted).toHaveLength(1);
+    expect(result.toolCallsExecuted[0]!.functionName).toBe('ping');
+    expect(result.response).toBe('all done');
+  });
+
+  it('fires the deprecated onAuditEvent callback when audit.onEvent is not set', async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) return Promise.resolve(nonStreamResponse(toolCallMessage('ping', {})));
+        return Promise.resolve(nonStreamResponse(finalMessage('done')));
+      }),
+    );
+    const onAuditEvent = vi.fn();
+    const agent = createAgent({ ...baseAgentConfig, onAuditEvent });
+    agent.registerFunction({
+      name: 'ping',
+      description: 'Ping',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: () => 'pong',
+    });
+
+    await agent.run('hi');
+    // A tool round records function_requested / validation_passed / function_executed.
+    expect(onAuditEvent).toHaveBeenCalled();
+  });
+
+  it('prefers audit.onEvent over the deprecated onAuditEvent when both are set', async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls === 1) return Promise.resolve(nonStreamResponse(toolCallMessage('ping', {})));
+        return Promise.resolve(nonStreamResponse(finalMessage('done')));
+      }),
+    );
+    const onAuditEvent = vi.fn();
+    const onEvent = vi.fn();
+    const agent = createAgent({ ...baseAgentConfig, onAuditEvent, audit: { onEvent } });
+    agent.registerFunction({
+      name: 'ping',
+      description: 'Ping',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: () => 'pong',
+    });
+
+    await agent.run('hi');
+    expect(onEvent).toHaveBeenCalled();
+    expect(onAuditEvent).not.toHaveBeenCalled();
+  });
 });
