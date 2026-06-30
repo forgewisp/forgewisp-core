@@ -71,7 +71,11 @@ describe('HttpClient', () => {
   });
 
   it('always sets model and messages in the body', async () => {
-    const client = new HttpClient({ llmEndpoint: 'https://x', model: 'gpt-4o', requestTimeoutMs: 0 });
+    const client = new HttpClient({
+      llmEndpoint: 'https://x',
+      model: 'gpt-4o',
+      requestTimeoutMs: 0,
+    });
     await client.post(messages, [], false);
     const body = JSON.parse(lastCall(fetchMock)[1].body as string) as Record<string, unknown>;
     expect(body['model']).toBe('gpt-4o');

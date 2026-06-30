@@ -461,7 +461,8 @@ describe('ForgewispAgent.run', () => {
       'fetch',
       vi.fn().mockImplementation(() => {
         calls++;
-        if (calls === 1) return Promise.resolve(nonStreamResponse(toolCallMessage('save', { value: 'x' })));
+        if (calls === 1)
+          return Promise.resolve(nonStreamResponse(toolCallMessage('save', { value: 'x' })));
         return Promise.resolve(nonStreamResponse(finalMessage('done')));
       }),
     );

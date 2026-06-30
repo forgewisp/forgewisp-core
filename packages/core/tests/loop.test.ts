@@ -203,10 +203,7 @@ describe('runToolLoop — multi-round orchestration', () => {
       registry,
       audit,
       baseConfig,
-      [
-        { message: toolCall('c1', 'nonexistent', {}) },
-        { message: finalMsg('ok') },
-      ],
+      [{ message: toolCall('c1', 'nonexistent', {}) }, { message: finalMsg('ok') }],
       seen,
     );
 
@@ -282,12 +279,7 @@ describe('runToolLoop — multi-round orchestration', () => {
 
     const first = seen[0]!;
     expect(first.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user']);
-    expect(first.map((m) => m.content)).toEqual([
-      'You are helpful.',
-      'earlier',
-      'noted',
-      'now',
-    ]);
+    expect(first.map((m) => m.content)).toEqual(['You are helpful.', 'earlier', 'noted', 'now']);
   });
 
   it('returns an empty response when the final message has null content', async () => {
