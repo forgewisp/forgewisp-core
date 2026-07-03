@@ -257,7 +257,7 @@ function routeTagBasedChunk(
   onText: (s: string) => void,
   onReasoning: (s: string) => void,
 ): void {
-  let remaining = state.pending + chunk;
+  let remaining = chunk;
   state.pending = '';
 
   while (remaining.length > 0) {
