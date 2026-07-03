@@ -1,0 +1,109 @@
+name: Claude PR Review
+
+# Automated, read-only code review of pull requests using Claude Code routed
+# to Ollama Cloud models (no Anthropic API key required). The model and Ollama
+# Cloud API key are provided via repository secrets so they can be rotated
+# without editing this file.
+#
+# Required GitHub secrets:
+#   OLLAMA_API_KEY  - Ollama Cloud API key (create one at https://ollama.com).
+#                     Used as the Anthropic-compatible bearer token
+#                     (ANTHROPIC_AUTH_TOKEN).
+#   OLLAMA_MODEL    - Ollama Cloud model tag, e.g. "glm-5.2:cloud".
+#
+# How the redirect works:
+#   claude-code-action is built for the Anthropic API. We repoint it at Ollama
+#   Cloud via settings.env (ANTHROPIC_BASE_URL) and authenticate with
+#   ANTHROPIC_AUTH_TOKEN. ANTHROPIC_API_KEY is explicitly emptied so Claude Code
+#   does not fall back to the Anthropic endpoint (see ollama/ollama#13854).
+#   settings.json `env` overrides the parent-process env, so the placeholder
+#   anthropic_api_key below never reaches the model.
+#
+# Read-only by construction:
+#   - settings.permissions denies Edit/Write/Bash/NotebookEdit/Web*.
+#   - The job token has contents:read only (no write), so Claude cannot push.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+  # claude-code-action mints its GitHub API token via OIDC, which requires
+  # id-token: write. The OIDC token only authorizes GitHub API calls scoped by
+  # the permissions above (read-heavy + PR/issue comments); it does not grant
+  # repo write or push.
+  id-token: write
+
+concurrency:
+  group: claude-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Skip fork PRs: GitHub hides secrets for fork pull_request events, so a
+    # run there would fail at the Ollama call with an empty key anyway. Skipping
+    # avoids noise and avoids surfacing any partial failure to contributors.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so Claude can read neighboring code and git context
+          # around the diff, not just the PR tip.
+          fetch-depth: 0
+
+      - name: Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Placeholder so the action's direct-API validation passes; the real
+          # auth is ANTHROPIC_AUTH_TOKEN in settings.env below. ANTHROPIC_API_KEY
+          # is emptied in settings.env so the CLI never talks to Anthropic.
+          anthropic_api_key: 'ollama-placeholder'
+          prompt: |
+            Review this pull request and post your findings as a review
+            comment with specific `file:line` references. This is a READ-ONLY
+            review: do not edit files, run shell commands, or push commits.
+
+            Focus on, in priority order:
+            1. Correctness bugs, logic errors, and unhandled edge cases.
+            2. Security boundaries specific to this repo:
+               - Risk tiers (read/write/destructive) are a security boundary.
+                 write/destructive tools must require onConfirmRequired at
+                 registration; confirmation UI must render only from
+                 schema-validated PendingCall.args, never raw LLM output.
+               - In the demo apps, every sink that turns model/user text into
+                 HTML must go through DOMPurify. The shared renderMarkdown
+                 allowlist (['href','title']) must not grow.
+               - bundled-tools safe-math evaluator must never use eval/Function.
+            3. Adherence to conventions in CLAUDE.md: TypeScript strict
+               (noUncheckedIndexedAccess, noUnusedLocals/Parameters),
+               no-floating-promises / await-thenable / no-misused-promises,
+               Prettier (single quotes, semis, trailing-comma all, 100-col,
+               2-space), and minimal runtime deps in @forgewisp/core (only ajv).
+
+            Keep the review concise and high-signal; skip nitpicks.
+          settings: |
+            {
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ollama.com",
+                "ANTHROPIC_AUTH_TOKEN": "${{ secrets.OLLAMA_API_KEY }}",
+                "ANTHROPIC_API_KEY": "",
+                "ANTHROPIC_MODEL": "${{ secrets.OLLAMA_MODEL }}"
+              },
+              "permissions": {
+                "allow": ["Read", "Grep", "Glob"],
+                "deny": [
+                  "Bash",
+                  "Edit",
+                  "Write",
+                  "NotebookEdit",
+                  "WebFetch",
+                  "WebSearch"
+                ]
+              }
+            }
