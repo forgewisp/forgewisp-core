@@ -85,7 +85,8 @@ export async function runToolLoop(
       let content: string;
       try {
         if (result.success) {
-          content = JSON.stringify(result.result);
+          const def = deps.registry.get(result.functionName);
+          content = serializeToolResult(result.result, def?.compactResultForLLM ?? true);
         } else if (result.abortReason === 'confirmation_rejected') {
           // The user explicitly declined this tool call in the confirmation
           // dialog. This is a final user decision, not a transient failure —
@@ -139,4 +140,115 @@ function buildReasoning(
     text,
     ...(tokens !== undefined ? { tokens } : {}),
   };
+}
+
+// ─── Tool-result serialization for the LLM ───────────────────────────────────
+//
+// Tool results are sent back to the model as the `content` of a `tool` role
+// message, then carried in every subsequent request body. A tool that returns a
+// large blob — a base64 PNG data URL, a big localStorage value, a long list of
+// keys — bloats the request and can cause the LLM stream to abort
+// ("BodyStreamBuffer was aborted") or waste context on bytes the model cannot
+// use. The full result is already in the audit log (the executor records it
+// before this runs), so we send the model a compact form: short fields pass
+// through unchanged; long strings and oversized arrays are elided.
+//
+// The elision marker is worded to communicate SUCCESS, not incompleteness. A
+// marker like "[truncated: N chars]" reads to an LLM as "the output got cut
+// off," which can prompt it to call the tool again to recover the "missing"
+// data (e.g. regenerating a QR code → duplicate artifacts). So the marker states
+// the tool succeeded and the payload was only omitted for size, and notes the
+// full value lives in the audit log. The marker is intentionally neutral about
+// retry: whether re-calling makes sense is tool-specific and belongs in each
+// tool's own description, not baked into core's elision protocol.
+//
+// A tool may opt out of compaction by setting `compactResultForLLM: false` on
+// its `FunctionDefinition` (e.g. a document fetcher whose full text the model
+// must read to answer). Opted-out results are sent verbatim — the tool author
+// accepts the larger request in exchange for the model seeing the full content.
+
+const MAX_TOOL_RESULT_CHARS = 4000;
+const MAX_STRING_CHARS = 200;
+const MAX_ARRAY_ELEMENTS = 20;
+
+const OMITTED_NOTE =
+  'tool succeeded, payload too large to relay; full value retained in the audit log';
+
+function omitString(len: number): string {
+  return `[omitted: ${len}-char payload — ${OMITTED_NOTE}]`;
+}
+
+/**
+ * Serializes a tool result for the LLM-bound `tool` message. When `compact` is
+ * true (the default) and the JSON form exceeds `MAX_TOOL_RESULT_CHARS`, the
+ * value is compacted (long strings / oversized arrays elided); if the compact
+ * form STILL exceeds the cap — e.g. a wide flat object of many short fields,
+ * none of which individually elide — the whole payload is replaced with a single
+ * omission marker, guaranteeing a bounded message. When `compact` is false the
+ * value is sent verbatim. Throws on non-serializable values (circular refs,
+ * BigInts); the caller handles that by recording an audit event and falling back
+ * to a placeholder.
+ */
+function serializeToolResult(value: unknown, compact: boolean): string {
+  const json = JSON.stringify(value) ?? '';
+  if (!compact || json.length <= MAX_TOOL_RESULT_CHARS) return json;
+  const compacted = compactForLLM(value);
+  const compactJson = JSON.stringify(compacted) ?? '';
+  if (compactJson.length <= MAX_TOOL_RESULT_CHARS) return compactJson;
+  // The compact form is still over the cap (wide flat object with many short
+  // fields). Replace the whole payload with one bounded marker — the full
+  // value is in the audit log.
+  return JSON.stringify(omitString(json.length));
+}
+
+/**
+ * Returns a compacted copy of `value` for LLM consumption. One traversal
+ * (`compact`) is the single source of truth; this is the thin wrapper that
+ * drops the `didTruncate` flag the caller here doesn't need. Strings longer
+ * than `MAX_STRING_CHARS` become an `[omitted: …]` marker; arrays longer than
+ * `MAX_ARRAY_ELEMENTS` become a `{ length, sample, __omitted }` summary; a
+ * plain object with any elided field is tagged `__omitted: true` so the model
+ * can tell large content was dropped (not that the call failed). Builds fresh
+ * plain objects/arrays (the original already serialized, so no circular refs
+ * reach here).
+ */
+function compactForLLM(value: unknown): unknown {
+  return compact(value)[0];
+}
+
+/** Returns `[compactedValue, didTruncate]`. The single recursive compactor. */
+function compact(value: unknown): [unknown, boolean] {
+  if (typeof value === 'string') {
+    return value.length > MAX_STRING_CHARS ? [omitString(value.length), true] : [value, false];
+  }
+  if (Array.isArray(value)) {
+    if (value.length > MAX_ARRAY_ELEMENTS) {
+      return [
+        {
+          length: value.length,
+          sample: value.slice(0, 3).map((v) => compact(v)[0]),
+          __omitted: true,
+        },
+        true,
+      ];
+    }
+    let any = false;
+    const mapped = value.map((v) => {
+      const [c, t] = compact(v);
+      if (t) any = true;
+      return c;
+    });
+    return [mapped, any];
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    let any = false;
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const [c, t] = compact(v);
+      if (t) any = true;
+      out[k] = c;
+    }
+    return [any ? { ...out, __omitted: true } : out, any];
+  }
+  return [value, false];
 }

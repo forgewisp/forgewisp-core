@@ -224,6 +224,171 @@ describe('runToolLoop — multi-round orchestration', () => {
     );
   });
 
+  it('compacts a large tool result before sending it back to the LLM', async () => {
+    // A tool that returns a large blob (e.g. a base64 PNG data URL) alongside
+    // short metadata. The full result must NOT be sent verbatim to the model —
+    // it bloats the request and can abort the next stream. Short fields pass
+    // through; the long string is replaced with a truncation marker.
+    registry.register({
+      name: 'bigBlob',
+      description: 'Returns a large blob plus metadata',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: () => ({
+        dataUrl: 'data:image/png;base64,' + 'A'.repeat(5000),
+        size: 256,
+        modules: 21,
+        version: 1,
+        errorCorrectionLevel: 'M',
+      }),
+    });
+    const seen: LLMMessage[][] = [];
+    const deps = seqDeps(
+      registry,
+      audit,
+      baseConfig,
+      [{ message: toolCall('c1', 'bigBlob', {}) }, { message: finalMsg('done') }],
+      seen,
+    );
+
+    await runToolLoop(deps, 'make a qr');
+
+    const round1 = seen[1]!;
+    const toolMessage = round1.find(
+      (m) => m.role === 'tool' && 'tool_call_id' in m && m.tool_call_id === 'c1',
+    ) as { content: string } | undefined;
+    expect(toolMessage).toBeDefined();
+    const parsed = JSON.parse(toolMessage!.content) as Record<string, unknown>;
+
+    // Short metadata survives untouched.
+    expect(parsed).toMatchObject({
+      size: 256,
+      modules: 21,
+      version: 1,
+      errorCorrectionLevel: 'M',
+      __omitted: true,
+    });
+    // The 5000-char data URL is elided with a success message (not "truncated",
+    // which reads as incomplete and makes the model regenerate the QR).
+    expect(parsed.dataUrl).toMatch(/^\[omitted: \d+-char payload — tool succeeded/);
+    expect(toolMessage!.content.length).toBeLessThan(500);
+  });
+
+  it('sends small tool results through unchanged', async () => {
+    const seen: LLMMessage[][] = [];
+    const deps = seqDeps(
+      registry,
+      audit,
+      baseConfig,
+      [{ message: toolCall('c1', 'echo', {}) }, { message: finalMsg('done') }],
+      seen,
+    );
+
+    await runToolLoop(deps, 'hi');
+
+    const round1 = seen[1]!;
+    const toolMessage = round1.find(
+      (m) => m.role === 'tool' && 'tool_call_id' in m && m.tool_call_id === 'c1',
+    ) as { content: string } | undefined;
+    expect(toolMessage!.content).toBe(JSON.stringify('pong'));
+  });
+
+  it('replaces a wide flat object (over cap, no field individually elided) with one omission marker', async () => {
+    // 100 fields × 50-char strings → ~5.9k chars JSON, over the 4000 cap, but no
+    // field exceeds MAX_STRING_CHARS (200) and there are no arrays — so the
+    // compact form is still over the cap and the whole payload is replaced with a
+    // single bounded marker (the full value is in the audit log).
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 100; i++) wide[`k${i}`] = 'x'.repeat(50);
+    registry.register({
+      name: 'wideFlat',
+      description: 'wide',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: () => wide,
+    });
+    const seen: LLMMessage[][] = [];
+    const deps = seqDeps(
+      registry,
+      audit,
+      baseConfig,
+      [{ message: toolCall('c1', 'wideFlat', {}) }, { message: finalMsg('done') }],
+      seen,
+    );
+
+    await runToolLoop(deps, 'dump');
+
+    const round1 = seen[1]!;
+    const toolMessage = round1.find(
+      (m) => m.role === 'tool' && 'tool_call_id' in m && m.tool_call_id === 'c1',
+    ) as { content: string } | undefined;
+    expect(toolMessage).toBeDefined();
+    // The fallback is a single JSON-string omission marker — bounded.
+    expect(toolMessage!.content.length).toBeLessThan(500);
+    const parsed = JSON.parse(toolMessage!.content) as string;
+    expect(parsed).toMatch(/^\[omitted: \d+-char payload — tool succeeded/);
+  });
+
+  it('tags a top-level oversized array with __omitted (consistent with objects)', async () => {
+    registry.register({
+      name: 'bigArray',
+      description: 'big array',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      // 1500 ints → ~6.4k chars JSON, over the 4000 cap → array (>20) is summarized.
+      handler: () => Array.from({ length: 1500 }, (_, i) => i),
+    });
+    const seen: LLMMessage[][] = [];
+    const deps = seqDeps(
+      registry,
+      audit,
+      baseConfig,
+      [{ message: toolCall('c1', 'bigArray', {}) }, { message: finalMsg('done') }],
+      seen,
+    );
+
+    await runToolLoop(deps, 'list');
+
+    const round1 = seen[1]!;
+    const toolMessage = round1.find(
+      (m) => m.role === 'tool' && 'tool_call_id' in m && m.tool_call_id === 'c1',
+    ) as { content: string } | undefined;
+    expect(toolMessage).toBeDefined();
+    const parsed = JSON.parse(toolMessage!.content) as Record<string, unknown>;
+    expect(parsed).toEqual({ length: 1500, sample: [0, 1, 2], __omitted: true });
+  });
+
+  it('sends a large result verbatim when compactResultForLLM is false', async () => {
+    registry.register({
+      name: 'docFetcher',
+      description: 'fetch a doc',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      compactResultForLLM: false,
+      handler: () => ({ text: 'A'.repeat(5000) }),
+    });
+    const seen: LLMMessage[][] = [];
+    const deps = seqDeps(
+      registry,
+      audit,
+      baseConfig,
+      [{ message: toolCall('c1', 'docFetcher', {}) }, { message: finalMsg('done') }],
+      seen,
+    );
+
+    await runToolLoop(deps, 'summarize');
+
+    const round1 = seen[1]!;
+    const toolMessage = round1.find(
+      (m) => m.role === 'tool' && 'tool_call_id' in m && m.tool_call_id === 'c1',
+    ) as { content: string } | undefined;
+    expect(toolMessage).toBeDefined();
+    // Opted out of compaction → the full 5000-char text is relayed verbatim.
+    expect(toolMessage!.content.length).toBeGreaterThan(5000);
+    expect(toolMessage!.content).toContain('AAAA');
+    expect(toolMessage!.content).not.toContain('omitted');
+  });
+
   it('truncates immediately and records max_tool_rounds_reached when maxToolRounds is 0', async () => {
     const callLLM = vi.fn();
     const deps: ToolLoopDeps = {

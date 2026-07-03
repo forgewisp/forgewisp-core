@@ -128,8 +128,8 @@ export function renderToolsList(tools: readonly ToolMeta[]): string {
 
 // ─── Artifacts panel ─────────────────────────────────────────────────────────
 
-const ARTIFACT_ALLOWED_TAGS = ['span', 'strong', 'a', 'div'];
-const ARTIFACT_ALLOWED_ATTR = ['class', 'href', 'target', 'rel'];
+const ARTIFACT_ALLOWED_TAGS = ['span', 'strong', 'a', 'div', 'img'];
+const ARTIFACT_ALLOWED_ATTR = ['class', 'href', 'target', 'rel', 'src', 'alt'];
 
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -219,6 +219,23 @@ export function renderArtifact(event: AuditEvent): string | null {
     }
     case 'getCurrentTime': {
       html = `<strong>Time:</strong> <span>${escapeHtml(str(result.local))}</span>`;
+      break;
+    }
+    case 'generateQrCode': {
+      // The full data URL lives in the audit event's `result` (the executor
+      // records it before the loop compacts the LLM-bound copy). Render it as
+      // an <img> only after validating it is a PNG data URL — a remote/model
+      // string can never break the `src` attribute. Falls back to metadata if
+      // the payload is missing or malformed.
+      const dataUrl = str(result.dataUrl);
+      const version = num(result.version);
+      const modules = num(result.modules);
+      const meta = `<span class="meta">v${version ?? '?'} · ${modules ?? '?'} modules</span>`;
+      if (/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(dataUrl)) {
+        html = `<img class="qr-artifact" src="${escapeHtml(dataUrl)}" alt="Generated QR code" /> ${meta}`;
+      } else {
+        html = `<strong>QR generated:</strong> ${meta}`;
+      }
       break;
     }
     default:

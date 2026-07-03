@@ -55,6 +55,17 @@ export interface FunctionDefinition<TArgs = Record<string, unknown>> {
   parameters: JSONSchema;
   riskTier: RiskTier;
   handler: (args: TArgs, context?: ToolContext) => unknown;
+  /**
+   * Whether the tool loop may compact a large `result` before relaying it back to
+   * the model (eliding long strings / oversized arrays and tagging the copy with
+   * `__omitted`). Defaults to `true` — compaction keeps a multi-KB blob (a base64
+   * PNG, a big storage value) from bloating the next request body or aborting the
+   * stream. Set to `false` for a tool whose full result the model genuinely needs
+   * to read (e.g. a document fetcher the user asked the agent to summarize); the
+   * full value is then sent verbatim, at the cost of a larger request. The full
+   * result is always retained in the audit log regardless of this setting.
+   */
+  compactResultForLLM?: boolean;
 }
 
 // ─── Tool Sets ───────────────────────────────────────────────────────────────

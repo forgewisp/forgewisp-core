@@ -7,9 +7,11 @@
 
 > A catalog of browser-safe, ready-to-register `FunctionDefinition` tools for
 > [Forgewisp](https://github.com/forgewisp/forgewisp-core) agents — time, UUIDs,
-> safe math, hashing, base64, viewport/battery/localStorage reads, clipboard,
-> speech, downloads, geolocation, localStorage writes, and a destructive
-> localStorage remove.
+> safe math, hashing, base64, color conversion, QR-code generation,
+> viewport/battery/localStorage/sessionStorage reads, clipboard, speech,
+> downloads, vibration, Web Share, screen wake lock, geolocation,
+> localStorage/sessionStorage writes, and destructive
+> localStorage/sessionStorage clears.
 
 `@forgewisp/core` lets you register your own functions as agent tools. This
 package ships a set of pre-built ones so you can give an agent real browser
@@ -78,8 +80,12 @@ types, e.g. `import { getCurrentTime, type GetCurrentTimeResult }`.
 | `decodeBase64`       | `decodeBase64`      | Base64 → UTF-8 text. Throws on invalid input.                              |
 | `getViewportInfo`    | `getViewportInfo`   | Viewport + document size, scroll position, device pixel ratio.             |
 | `getBatteryInfo`     | `getBatteryInfo`    | Battery level + charging state (where the Battery API exists).             |
+| `convertColor`       | `convertColor`      | Convert between hex / rgb / hsl; auto-detects the input format.           |
+| `generateQrCode`     | `generateQrCode`    | Encode text/URL as a QR code → PNG data URL (offscreen `<canvas>`).        |
 | `listLocalStorageKeys` | `listLocalStorageKeys` | All keys in this origin's `localStorage`.                              |
 | `getLocalStorageItem` | `getLocalStorageItem` | One `localStorage` value by key (`{ exists: false }` if absent).       |
+| `listSessionStorageKeys` | `listSessionStorageKeys` | All keys in this tab's `sessionStorage` (per-tab; cleared on close). |
+| `getSessionStorageItem` | `getSessionStorageItem` | One `sessionStorage` value by key (`{ exists: false }` if absent).     |
 
 The catalog also includes seven **agent planning tools** — a job-tracking
 scratchpad persisted in `localStorage` under `forgewisp.plans`. They are
@@ -104,6 +110,10 @@ the agent self-manages, so no `onConfirmRequired` prompts):
 | `speakText`          | `speakText`         | Speak text aloud (`speechSynthesis`), with optional BCP-47 language.      |
 | `downloadFile`       | `downloadFile`      | Trigger a file download; rejects filenames with path separators.          |
 | `setLocalStorageItem` | `setLocalStorageItem` | Write a key/value to `localStorage`.                                     |
+| `vibrateDevice`      | `vibrateDevice`     | Vibrate the device (`navigator.vibrate`) with a pulse pattern.            |
+| `shareContent`       | `shareContent`      | Open the native share sheet (`navigator.share`); cancellation is not an error. |
+| `requestWakeLock`    | `requestWakeLock`   | Acquire a screen wake lock (`navigator.wakeLock`); auto-releases on tab hide. |
+| `setSessionStorageItem` | `setSessionStorageItem` | Write a key/value to `sessionStorage` (per-tab; cleared on close).    |
 | `getGeolocation`     | `getGeolocation`    | Request a GPS fix (`navigator.geolocation`); user-prompted by the browser. |
 
 ### `destructive`
@@ -111,6 +121,8 @@ the agent self-manages, so no `onConfirmRequired` prompts):
 | Tool                   | Name                  | Description                              |
 | ---------------------- | --------------------- | ---------------------------------------- |
 | `removeLocalStorageItem` | `removeLocalStorageItem` | Delete a key from `localStorage`.        |
+| `clearLocalStorage`    | `clearLocalStorage`    | Clear **all** keys from `localStorage` (high blast radius). |
+| `removeSessionStorageItem` | `removeSessionStorageItem` | Delete a key from `sessionStorage`.   |
 
 Register the whole catalog:
 
