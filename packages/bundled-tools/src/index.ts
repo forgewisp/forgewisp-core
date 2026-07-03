@@ -42,11 +42,23 @@ export type { GetViewportInfoArgs, GetViewportInfoResult } from './tools/index.j
 export { getBatteryInfo } from './tools/index.js';
 export type { GetBatteryInfoArgs, GetBatteryInfoResult } from './tools/index.js';
 
+export { convertColor } from './tools/index.js';
+export type { ConvertColorArgs, ConvertColorResult } from './tools/index.js';
+
+export { generateQrCode } from './tools/index.js';
+export type { GenerateQrCodeArgs, GenerateQrCodeResult } from './tools/index.js';
+
 export { listLocalStorageKeys } from './tools/index.js';
 export type { ListLocalStorageKeysArgs, ListLocalStorageKeysResult } from './tools/index.js';
 
 export { getLocalStorageItem } from './tools/index.js';
 export type { GetLocalStorageItemArgs, GetLocalStorageItemResult } from './tools/index.js';
+
+export { listSessionStorageKeys } from './tools/index.js';
+export type { ListSessionStorageKeysArgs, ListSessionStorageKeysResult } from './tools/index.js';
+
+export { getSessionStorageItem } from './tools/index.js';
+export type { GetSessionStorageItemArgs, GetSessionStorageItemResult } from './tools/index.js';
 
 export { copyToClipboard } from './tools/index.js';
 export type { CopyToClipboardArgs, CopyToClipboardResult } from './tools/index.js';
@@ -60,11 +72,32 @@ export type { DownloadFileArgs, DownloadFileResult } from './tools/index.js';
 export { setLocalStorageItem } from './tools/index.js';
 export type { SetLocalStorageItemArgs, SetLocalStorageItemResult } from './tools/index.js';
 
+export { vibrateDevice } from './tools/index.js';
+export type { VibrateDeviceArgs, VibrateDeviceResult } from './tools/index.js';
+
+export { shareContent } from './tools/index.js';
+export type { ShareContentArgs, ShareContentResult } from './tools/index.js';
+
+export { requestWakeLock } from './tools/index.js';
+export type { RequestWakeLockArgs, RequestWakeLockResult } from './tools/index.js';
+
+export { setSessionStorageItem } from './tools/index.js';
+export type { SetSessionStorageItemArgs, SetSessionStorageItemResult } from './tools/index.js';
+
 export { getGeolocation } from './tools/index.js';
 export type { GetGeolocationArgs, GetGeolocationResult } from './tools/index.js';
 
 export { removeLocalStorageItem } from './tools/index.js';
 export type { RemoveLocalStorageItemArgs, RemoveLocalStorageItemResult } from './tools/index.js';
+
+export { clearLocalStorage } from './tools/index.js';
+export type { ClearLocalStorageArgs, ClearLocalStorageResult } from './tools/index.js';
+
+export { removeSessionStorageItem } from './tools/index.js';
+export type {
+  RemoveSessionStorageItemArgs,
+  RemoveSessionStorageItemResult,
+} from './tools/index.js';
 
 // Planning tools (agent job-tracking scratchpad persisted in localStorage).
 export { listPlans } from './tools/index.js';
@@ -106,14 +139,24 @@ import { encodeBase64 } from './tools/index.js';
 import { decodeBase64 } from './tools/index.js';
 import { getViewportInfo } from './tools/index.js';
 import { getBatteryInfo } from './tools/index.js';
+import { convertColor } from './tools/index.js';
+import { generateQrCode } from './tools/index.js';
 import { listLocalStorageKeys } from './tools/index.js';
 import { getLocalStorageItem } from './tools/index.js';
+import { listSessionStorageKeys } from './tools/index.js';
+import { getSessionStorageItem } from './tools/index.js';
 import { copyToClipboard } from './tools/index.js';
 import { speakText } from './tools/index.js';
 import { downloadFile } from './tools/index.js';
 import { setLocalStorageItem } from './tools/index.js';
+import { vibrateDevice } from './tools/index.js';
+import { shareContent } from './tools/index.js';
+import { requestWakeLock } from './tools/index.js';
+import { setSessionStorageItem } from './tools/index.js';
 import { getGeolocation } from './tools/index.js';
 import { removeLocalStorageItem } from './tools/index.js';
+import { clearLocalStorage } from './tools/index.js';
+import { removeSessionStorageItem } from './tools/index.js';
 import { listPlans } from './tools/index.js';
 import { getPlan } from './tools/index.js';
 import { createPlan } from './tools/index.js';
@@ -143,8 +186,12 @@ export const BUNDLED_TOOLS = [
   decodeBase64,
   getViewportInfo,
   getBatteryInfo,
+  convertColor,
+  generateQrCode,
   listLocalStorageKeys,
   getLocalStorageItem,
+  listSessionStorageKeys,
+  getSessionStorageItem,
   // read — agent job-tracking scratchpad (forgewisp.plans); see plan-store.ts.
   // read-tier by exception: agent-owned, bounded, schema-validated scratchpad,
   // so the agent self-manages its job without onConfirmRequired prompts.
@@ -160,9 +207,15 @@ export const BUNDLED_TOOLS = [
   speakText,
   downloadFile,
   setLocalStorageItem,
+  vibrateDevice,
+  shareContent,
+  requestWakeLock,
+  setSessionStorageItem,
   getGeolocation,
   // destructive
   removeLocalStorageItem,
+  clearLocalStorage,
+  removeSessionStorageItem,
 ] as const;
 
 /**

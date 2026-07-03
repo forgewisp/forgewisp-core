@@ -25,6 +25,12 @@ export type { GetViewportInfoArgs, GetViewportInfoResult } from './get-viewport-
 export { getBatteryInfo } from './get-battery-info.js';
 export type { GetBatteryInfoArgs, GetBatteryInfoResult } from './get-battery-info.js';
 
+export { convertColor } from './convert-color.js';
+export type { ConvertColorArgs, ConvertColorResult } from './convert-color.js';
+
+export { generateQrCode } from './generate-qr-code.js';
+export type { GenerateQrCodeArgs, GenerateQrCodeResult } from './generate-qr-code.js';
+
 export { listLocalStorageKeys } from './list-local-storage-keys.js';
 export type {
   ListLocalStorageKeysArgs,
@@ -36,6 +42,18 @@ export type {
   GetLocalStorageItemArgs,
   GetLocalStorageItemResult,
 } from './get-local-storage-item.js';
+
+export { listSessionStorageKeys } from './list-session-storage-keys.js';
+export type {
+  ListSessionStorageKeysArgs,
+  ListSessionStorageKeysResult,
+} from './list-session-storage-keys.js';
+
+export { getSessionStorageItem } from './get-session-storage-item.js';
+export type {
+  GetSessionStorageItemArgs,
+  GetSessionStorageItemResult,
+} from './get-session-storage-item.js';
 
 export { copyToClipboard } from './copy-to-clipboard.js';
 export type { CopyToClipboardArgs, CopyToClipboardResult } from './copy-to-clipboard.js';
@@ -52,6 +70,21 @@ export type {
   SetLocalStorageItemResult,
 } from './set-local-storage-item.js';
 
+export { vibrateDevice } from './vibrate-device.js';
+export type { VibrateDeviceArgs, VibrateDeviceResult } from './vibrate-device.js';
+
+export { shareContent } from './share-content.js';
+export type { ShareContentArgs, ShareContentResult } from './share-content.js';
+
+export { requestWakeLock } from './request-wake-lock.js';
+export type { RequestWakeLockArgs, RequestWakeLockResult } from './request-wake-lock.js';
+
+export { setSessionStorageItem } from './set-session-storage-item.js';
+export type {
+  SetSessionStorageItemArgs,
+  SetSessionStorageItemResult,
+} from './set-session-storage-item.js';
+
 export { getGeolocation } from './get-geolocation.js';
 export type { GetGeolocationArgs, GetGeolocationResult } from './get-geolocation.js';
 
@@ -60,6 +93,15 @@ export type {
   RemoveLocalStorageItemArgs,
   RemoveLocalStorageItemResult,
 } from './remove-local-storage-item.js';
+
+export { clearLocalStorage } from './clear-local-storage.js';
+export type { ClearLocalStorageArgs, ClearLocalStorageResult } from './clear-local-storage.js';
+
+export { removeSessionStorageItem } from './remove-session-storage-item.js';
+export type {
+  RemoveSessionStorageItemArgs,
+  RemoveSessionStorageItemResult,
+} from './remove-session-storage-item.js';
 
 // Planning tools (agent job-tracking scratchpad persisted in localStorage).
 export { listPlans } from './list-plans.js';

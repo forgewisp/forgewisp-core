@@ -167,6 +167,50 @@ describe('sanitize — renderArtifact (artifacts panel sink)', () => {
   it('returns null for unrendered event types', () => {
     expect(renderArtifact({ ...baseEvent, type: 'function_requested' })).toBeNull();
   });
+
+  it('renders a QR <img> only from a validated PNG data URL', () => {
+    const out = renderArtifact({
+      ...baseEvent,
+      functionName: 'generateQrCode',
+      args: { text: 'hello' },
+      result: {
+        dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+        size: 256,
+        modules: 21,
+        version: 1,
+        errorCorrectionLevel: 'M',
+      },
+    });
+    expect(out).not.toBeNull();
+    expect(hasExecutablePayload(out!)).toBe(false);
+    expect(out).toContain('<img');
+    expect(out).toContain('src="data:image/png;base64,iVBORw0KGgo="');
+    expect(out).toContain('alt="Generated QR code"');
+  });
+
+  it('refuses a non-PNG or breakout data URL and falls back to metadata', () => {
+    // Attempts to break out of the src attribute or inject a non-image scheme
+    // must not produce an <img>; the renderer falls back to plain metadata.
+    const attacks = [
+      'data:image/png;base64,iVBORw0KGgo=" onerror="alert(1)"',
+      'javascript:alert(1)',
+      'data:image/svg+xml,<svg onload=alert(1)>',
+      '"><img src=x onerror=alert(1)>',
+    ];
+    for (const dataUrl of attacks) {
+      const out = renderArtifact({
+        ...baseEvent,
+        functionName: 'generateQrCode',
+        args: { text: 'x' },
+        result: { dataUrl, size: 256, modules: 21, version: 1, errorCorrectionLevel: 'M' },
+      });
+      expect(out).not.toBeNull();
+      expect(hasExecutablePayload(out!)).toBe(false);
+      expect(out).not.toContain('<img');
+      // Metadata fallback still renders.
+      expect(out).toContain('v1');
+    }
+  });
 });
 
 describe('sanitize — escapeHtml', () => {
