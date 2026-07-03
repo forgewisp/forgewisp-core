@@ -32,6 +32,11 @@ permissions:
   pull-requests: write
   issues: write
   actions: read
+  # claude-code-action mints its GitHub API token via OIDC, which requires
+  # id-token: write. The OIDC token only authorizes GitHub API calls scoped by
+  # the permissions above (read-heavy + PR/issue comments); it does not grant
+  # repo write or push.
+  id-token: write
 
 concurrency:
   group: claude-review-${{ github.ref }}
