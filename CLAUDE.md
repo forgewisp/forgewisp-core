@@ -38,8 +38,8 @@ pnpm format           # prettier --write .
 pnpm format:check     # prettier --check .  (run in CI before lint)
 ```
 
-The demo dev server runs on **http://localhost:5173** (Vite default; the README's `:3000` is
-stale). On first load it prompts for an LLM endpoint, model, and optional API key, persisted to
+The demo dev server runs on **http://localhost:5173** (the Vite default). On first load it
+prompts for an LLM endpoint, model, and optional API key, persisted to
 `localStorage` under `forgewisp.demo.config`.
 
 ### Running things in a single package
