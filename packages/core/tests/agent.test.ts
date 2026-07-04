@@ -158,7 +158,11 @@ describe('ForgewispAgent.run', () => {
     await expect(agent.run('hi', { signal: ac.signal })).rejects.toThrow();
   });
 
-  it('rejects when the request times out', async () => {
+  it('surfaces a per-attempt timeout as a failed result (not a bare rejection)', async () => {
+    // A per-attempt timeout is a terminal failure, not a user abort: the run
+    // resolves with `failed: true`, the timeout error, and a `run_failed` audit
+    // event — observable instead of throwing bare. (P3.2 will refine timeout
+    // retry/semantics.)
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((_url, init: { signal?: AbortSignal }) => {
@@ -171,7 +175,35 @@ describe('ForgewispAgent.run', () => {
     );
 
     const agent = createAgent({ ...baseAgentConfig, requestTimeoutMs: 50 });
-    await expect(agent.run('hi')).rejects.toThrow();
+    const result = await agent.run('hi');
+
+    expect(result.failed).toBe(true);
+    expect(result.truncated).toBe(false);
+    expect(result.response).toBe('');
+    expect(result.error).toMatch(/timed out/i);
+    expect(agent.getAuditLog().some((e) => e.type === 'run_failed')).toBe(true);
+  });
+
+  it('normalizes non-finite / negative / fractional loopRetries so the run still calls the LLM', async () => {
+    // NaN or negative loopRetries would make the retry loop's guard false on the
+    // first iteration → callLLM never invoked → a silent run_failed with
+    // `error: undefined`; Infinity would hang retrying forever on a persistent
+    // transient error. The agent layer normalizes such values to a non-negative
+    // integer (NaN/negative/Infinity → default 1; fractional → floored), so the
+    // run proceeds normally.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(nonStreamResponse(finalMessage('done'))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY, 2.9]) {
+      const agent = createAgent({ ...baseAgentConfig, loopRetries: bad });
+      const result = await agent.run('hi');
+      expect(result.failed).toBeUndefined();
+      expect(result.response).toBe('done');
+    }
+    // One fetch per run — none of the bad values short-circuited the LLM call.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('sends the expected body and headers to the LLM endpoint', async () => {

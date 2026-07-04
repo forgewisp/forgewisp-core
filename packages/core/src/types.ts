@@ -112,6 +112,7 @@ export type AuditEventType =
   | 'function_errored'
   | 'audit_callback_errored'
   | 'max_tool_rounds_reached'
+  | 'run_failed'
   | 'stream_malformed';
 
 export interface AuditEvent {
@@ -123,6 +124,15 @@ export interface AuditEvent {
   args?: Record<string, unknown>;
   result?: unknown;
   error?: string;
+  /**
+   * Original Error stack trace, captured on `run_failed` events when the
+   * underlying cause is an `Error`. The user-facing `error` field carries only
+   * the message; `errorStack` keeps the trace so a programming bug laundered
+   * through the loop's terminal-failure path is still debuggable from the
+   * audit export. Absent for non-Error causes and for events that never carry
+   * a stack.
+   */
+  errorStack?: string;
 }
 
 // ─── Streaming ───────────────────────────────────────────────────────────────
@@ -244,6 +254,26 @@ export interface ForgewispConfig {
   http?: HttpConfig;
   /** Max tool-call rounds before the loop truncates. Defaults to 10. */
   maxToolRounds?: number;
+  /**
+   * Max loop-level retry attempts after the first call to the LLM fails with a
+   * retryable error (an `HttpError` with `isRetryable: true`, i.e. a 429/503/
+   * 504 or network reset that already exhausted the HTTP layer's own retry
+   * budget). Defaults to 1. Set to 0 to disable loop-level retry. Backoff
+   * reuses `http.retryBackoffBaseMs` / `http.retryBackoffMaxMs`. Non-retryable
+   * errors and user aborts are never retried at this layer.
+   *
+   * The loop and HTTP budgets are multiplicative: each loop retry re-enters
+   * `callLLM`, which starts a fresh HTTP retry sequence of up to
+   * `http.maxRetries` + 1 attempts. The combined ceiling per round is
+   * `(http.maxRetries + 1) × (loopRetries + 1)` fetches on a persistent
+   * retryable failure (defaults 4 × 2 = 8; `loopRetries: 3` → 4 × 4 = 16) —
+   * tune deliberately, since this amplifies load on an already-failing
+   * upstream. A per-attempt timeout is terminal at this layer (not retried);
+   * finer timeout-retry semantics are deferred to P3.2. Non-finite, negative,
+   * or non-integer values are normalized to a non-negative integer at the
+   * agent layer (NaN/negative/Infinity → default; fractional → floored).
+   */
+  loopRetries?: number;
 }
 
 // ─── Agent Result ────────────────────────────────────────────────────────────
@@ -261,6 +291,18 @@ export interface AgentResult {
   reasoning?: AgentReasoning;
   /** True when the tool-call loop hit the max-rounds cap without a final response. */
   truncated: boolean;
+  /**
+   * True when the run ended because a call to the LLM failed terminally (a
+   * non-retryable error, or a retryable error that exhausted the loop-level
+   * retry budget). When `failed` is true, `error` carries a human-readable
+   * message, `response` is empty, and any partial state accumulated before the
+   * failure (reasoning, tool calls executed/aborted in prior rounds) is
+   * preserved. A user abort is NOT a failure — it propagates as a rejection
+   * from `agent.run` instead.
+   */
+  failed?: boolean;
+  /** Human-readable error message when `failed` is true. */
+  error?: string;
   toolCallsExecuted: Array<{
     functionName: string;
     args: Record<string, unknown>;

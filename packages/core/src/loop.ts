@@ -1,5 +1,12 @@
 import { AuditLog } from './audit.js';
 import { executeToolCalls } from './executor.js';
+import {
+  backoffDelay,
+  DEFAULT_BACKOFF_BASE_MS,
+  DEFAULT_BACKOFF_MAX_MS,
+  isHttpError,
+  sleep,
+} from './http.js';
 import { FunctionRegistry } from './registry.js';
 import { AgentReasoning, AgentResult, ChatMessage, ForgewispConfig } from './types.js';
 import type { LLMMessage } from './wire.js';
@@ -17,6 +24,11 @@ export interface ToolLoopDeps {
   audit: AuditLog;
   config: ForgewispConfig;
   maxToolRounds: number;
+  /**
+   * Max loop-level retry attempts after the first call to the LLM fails with a
+   * retryable error. Defaults to 1 at the agent layer; tests override via deps.
+   */
+  loopRetries: number;
 }
 
 /**
@@ -51,7 +63,65 @@ export async function runToolLoop(
   const reasoningMode = deps.config.streaming?.reasoning?.mode ?? 'none';
 
   for (let round = 0; round < deps.maxToolRounds; round++) {
-    const { message, reasoning, reasoningTokens } = await deps.callLLM(messages, signal);
+    // Drive the LLM call for this round, retrying transient failures within the
+    // loop-level budget. The HTTP layer already retries 429/503/504/network
+    // resets up to its own `maxRetries`; a retryable `HttpError` reaching here
+    // means THAT attempt's HTTP budget is exhausted, so the loop layer starts a
+    // fresh callLLM — which itself begins a fresh HTTP retry sequence. The two
+    // budgets are multiplicative: at most (http.maxRetries+1) × (loopRetries+1)
+    // fetches per round for a persistent retryable failure (defaults 4×2 = 8;
+    // loopRetries: 3 → 4×4 = 16). Tune deliberately — this amplifies load on an
+    // already-failing upstream. A user/run abort is never a failure — it
+    // rethrows so `agent.run` rejects with the abort reason. A terminal error
+    // records a `run_failed` audit event and returns the partial state
+    // accumulated so far instead of throwing bare.
+    let llmResult: { message: LLMMessage; reasoning: string; reasoningTokens?: number } | undefined;
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= deps.loopRetries; attempt++) {
+      try {
+        llmResult = await deps.callLLM(messages, signal);
+        break;
+      } catch (err) {
+        // A user/run abort propagates immediately — never retried, never audited
+        // as a failure. `signal?.aborted` distinguishes an intentional cancel
+        // (or external timeout) from a per-attempt timeout the HTTP layer
+        // surfaces as an abort-like error.
+        if (signal?.aborted) throw err;
+        lastError = err;
+        const retryable = isHttpError(err) && err.isRetryable;
+        if (retryable && attempt < deps.loopRetries) {
+          // Sleep on the run signal: if the user aborts during backoff, the
+          // sleep rejects and the abort propagates (not audited as run_failed).
+          await loopBackoffSleep(attempt + 1, deps.config, signal);
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (!llmResult) {
+      const errMsg = errMessage(lastError);
+      // Preserve the original stack on the audit event so a programming error
+      // (e.g. a TypeError regression in streaming) laundered through this
+      // catch-all is still debuggable from the audit export — the user-facing
+      // `error` string carries only the message.
+      const errorStack = lastError instanceof Error ? lastError.stack : undefined;
+      deps.audit.record('run_failed', 'system', {
+        error: errMsg,
+        ...(errorStack ? { errorStack } : {}),
+      });
+      return {
+        response: '',
+        reasoning: buildReasoning(reasoningMode, accumulatedReasoning, accumulatedReasoningTokens),
+        truncated: false,
+        failed: true,
+        error: errMsg,
+        toolCallsExecuted: allExecuted,
+        toolCallsAborted: allAborted,
+      };
+    }
+
+    const { message, reasoning, reasoningTokens } = llmResult;
     messages.push(message);
 
     if (reasoning) accumulatedReasoning += reasoning;
@@ -140,6 +210,55 @@ function buildReasoning(
     text,
     ...(tokens !== undefined ? { tokens } : {}),
   };
+}
+
+// ─── Loop-level retry helpers ────────────────────────────────────────────────
+//
+// The loop layer adds a small retry budget on top of the HTTP layer's own. It
+// reuses the HTTP-layer backoff knobs (`http.retryBackoffBaseMs` /
+// `retryBackoffMaxMs`) AND the HTTP layer's `sleep` / `backoffDelay` helpers —
+// one backoff curve, configured and implemented in one place (http.ts), so the
+// two layers cannot drift apart.
+
+/** Coerces a thrown value into a human-readable string for `run_failed`. */
+function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  // `undefined`/`null` reach here when the retry loop never entered (e.g. a
+  // NaN/negative `loopRetries` slipped past the agent-layer guard) so
+  // `lastError` was never assigned — return a concrete string rather than the
+  // JS value `undefined` (JSON.stringify(undefined) === undefined), which would
+  // violate the `: string` return type and break consumers doing
+  // `result.error.includes(...)`.
+  if (err === undefined || err === null) return '[Forgewisp] Unknown error.';
+  if (typeof err === 'number' || typeof err === 'boolean' || typeof err === 'bigint') {
+    return String(err);
+  }
+  // An object, array, function, or symbol. Prefer a JSON form (the common case
+  // for a thrown plain object like `{ code: 500 }`); if it isn't JSON-serializable
+  // (circular) or JSON.stringify returns the value `undefined` (function/symbol),
+  // fall back to a concrete placeholder instead of `[object Object]`.
+  try {
+    const s = JSON.stringify(err);
+    return s === undefined ? '[Forgewisp] Unknown error.' : s;
+  } catch {
+    return '[Forgewisp] Unknown error.';
+  }
+}
+
+/**
+ * Sleeps for a loop-level backoff before retrying the LLM call, using the
+ * HTTP-layer backoff config and helpers. Aborts during backoff propagate as
+ * rejections (the caller rethrows on `signal?.aborted`).
+ */
+function loopBackoffSleep(
+  attempt: number,
+  config: ForgewispConfig,
+  signal?: AbortSignal,
+): Promise<void> {
+  const base = config.http?.retryBackoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
+  const max = config.http?.retryBackoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
+  return sleep(backoffDelay(attempt, base, max), signal);
 }
 
 // ─── Tool-result serialization for the LLM ───────────────────────────────────

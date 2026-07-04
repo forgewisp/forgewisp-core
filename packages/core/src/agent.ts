@@ -14,6 +14,22 @@ import {
 import type { LLMMessage } from './wire.js';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 10;
+const DEFAULT_LOOP_RETRIES = 1;
+
+/**
+ * Coerces `config.loopRetries` to a non-negative integer. Falls back to the
+ * default for missing / NaN / Infinity / negative values: a NaN or negative
+ * value would make the retry loop's `attempt <= loopRetries` guard false on the
+ * first iteration, so `callLLM` is never invoked and the run silently fails
+ * with `error: undefined`; an `Infinity` would hang retrying forever on a
+ * persistent transient error. `0` is honored (disables loop-level retry).
+ */
+function normalizeLoopRetries(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return DEFAULT_LOOP_RETRIES;
+  }
+  return Math.floor(value);
+}
 
 export class ForgewispAgent {
   private config: ForgewispConfig;
@@ -21,11 +37,13 @@ export class ForgewispAgent {
   private audit: AuditLog;
   private http: HttpClient;
   private maxToolRounds: number;
+  private loopRetries: number;
 
   constructor(config: ForgewispConfig) {
     this.config = config;
     this.registry = new FunctionRegistry();
     this.maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
+    this.loopRetries = normalizeLoopRetries(config.loopRetries);
 
     // Resolve the audit callback: prefer `audit.onEvent`, fall back to the
     // deprecated top-level `onAuditEvent` for migration compatibility.
@@ -81,6 +99,7 @@ export class ForgewispAgent {
         audit: this.audit,
         config: this.config,
         maxToolRounds: this.maxToolRounds,
+        loopRetries: this.loopRetries,
       },
       userMessage,
       options?.signal,

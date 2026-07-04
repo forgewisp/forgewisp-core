@@ -228,6 +228,7 @@ const EVENT_LABELS: Record<string, string> = {
   function_errored: 'errored',
   audit_callback_errored: 'audit callback errored',
   max_tool_rounds_reached: 'max rounds',
+  run_failed: 'run failed',
   stream_malformed: 'stream malformed',
 };
 
@@ -440,13 +441,19 @@ async function handleChatSubmit(e: SubmitEvent): Promise<void> {
       history: conversation,
     });
     const streamingEl = finalizeStreamingMessage();
-    if (result.response) {
+    if (result.failed) {
+      // A terminal LLM failure (non-retryable error, or a retryable one that
+      // exhausted the loop-level retry budget) resolves with `failed: true`
+      // instead of rejecting — surface it as an error bubble. The catch below
+      // only fires for aborts / unexpected throws, not for failed runs.
+      appendAssistantMessage(`[error] ${result.error ?? 'The run failed for an unknown reason.'}`);
+    } else if (result.response) {
       conversation.push({ role: 'user', content: text });
       conversation.push({ role: 'assistant', content: result.response });
-    }
-    // If the response was already rendered via streaming chunks, don't duplicate it.
-    if (result.response && !streamingEl) {
-      appendAssistantMessage(result.response);
+      // If the response was already rendered via streaming chunks, don't duplicate it.
+      if (!streamingEl) {
+        appendAssistantMessage(result.response);
+      }
     }
   } catch (err) {
     finalizeStreamingMessage();

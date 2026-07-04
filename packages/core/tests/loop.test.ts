@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runToolLoop, ToolLoopDeps } from '../src/loop.js';
 import { FunctionRegistry } from '../src/registry.js';
 import { AuditLog } from '../src/audit.js';
+import { HttpError } from '../src/http.js';
 import { ForgewispConfig } from '../src/types.js';
 import type { LLMMessage } from '../src/wire.js';
 
@@ -43,7 +44,7 @@ function makeDeps(
       reasoning: '',
     });
   };
-  return { callLLM, registry, audit, config, maxToolRounds: 5 };
+  return { callLLM, registry, audit, config, maxToolRounds: 5, loopRetries: 1 };
 }
 
 describe('runToolLoop — confirmation cancellation', () => {
@@ -127,7 +128,7 @@ function seqDeps(
       ...(r.reasoningTokens !== undefined ? { reasoningTokens: r.reasoningTokens } : {}),
     });
   };
-  return { callLLM, registry, audit, config, maxToolRounds };
+  return { callLLM, registry, audit, config, maxToolRounds, loopRetries: 1 };
 }
 
 function toolCall(id: string, name: string, args: Record<string, unknown>): LLMMessage {
@@ -397,6 +398,7 @@ describe('runToolLoop — multi-round orchestration', () => {
       audit,
       config: baseConfig,
       maxToolRounds: 0,
+      loopRetries: 1,
     };
 
     const result = await runToolLoop(deps, 'hi');
@@ -454,5 +456,258 @@ describe('runToolLoop — multi-round orchestration', () => {
 
     expect(result.truncated).toBe(false);
     expect(result.response).toBe('');
+  });
+});
+
+// ─── P1.2: loop-level round recovery ────────────────────────────────────────
+
+/**
+ * Config with the loop-level backoff dialed way down so retry tests don't wait
+ * on real timers. Reuses the HTTP-layer backoff knobs the loop reads.
+ */
+const fastBackoffConfig: ForgewispConfig = {
+  ...baseConfig,
+  http: { retryBackoffBaseMs: 1, retryBackoffMaxMs: 2 },
+};
+
+/** A retryable transient HTTP failure (503, would have exhausted HTTP layer). */
+const transientError = new HttpError(503, 'upstream busy', true);
+
+describe('runToolLoop — round recovery (P1.2)', () => {
+  let registry: FunctionRegistry;
+  let audit: AuditLog;
+
+  beforeEach(() => {
+    registry = new FunctionRegistry();
+    audit = new AuditLog();
+    registry.register({
+      name: 'echo',
+      description: 'Echo',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: () => 'pong',
+    });
+  });
+
+  it('retries a transient HttpError once and succeeds on the second attempt', async () => {
+    const callLLM = vi.fn();
+    // First attempt of round 0 rejects transiently; the retry succeeds with a
+    // final response (no tool calls), so the loop terminates normally.
+    callLLM.mockRejectedValueOnce(transientError).mockResolvedValueOnce({
+      message: finalMsg('recovered'),
+      reasoning: '',
+    });
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: fastBackoffConfig,
+      maxToolRounds: 5,
+      loopRetries: 1,
+    };
+
+    const result = await runToolLoop(deps, 'hi');
+
+    expect(callLLM).toHaveBeenCalledTimes(2);
+    expect(result.failed).toBeUndefined();
+    expect(result.truncated).toBe(false);
+    expect(result.response).toBe('recovered');
+    // No run_failed event — the round recovered.
+    expect(audit.getAll().some((e) => e.type === 'run_failed')).toBe(false);
+  });
+
+  it('returns a failed result with partial state for a terminal (non-retryable) error', async () => {
+    // Round 0 succeeds with a tool call (executed), round 1 fails terminally.
+    const callLLM = vi.fn();
+    callLLM
+      .mockResolvedValueOnce({ message: toolCall('c1', 'echo', {}), reasoning: 'r0' })
+      .mockRejectedValueOnce(new HttpError(400, 'bad request', false));
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: {
+        ...fastBackoffConfig,
+        streaming: { reasoning: { mode: 'tag-based', tag: 'thinking' } },
+      },
+      maxToolRounds: 5,
+      loopRetries: 1,
+    };
+
+    const result = await runToolLoop(deps, 'hi');
+
+    // Non-retryable → exactly one attempt at round 1 (no retry).
+    expect(callLLM).toHaveBeenCalledTimes(2);
+    expect(result.failed).toBe(true);
+    expect(result.truncated).toBe(false);
+    expect(result.response).toBe('');
+    expect(result.error).toContain('400');
+    // Partial state: reasoning from round 0 + the executed tool call survive.
+    expect(result.reasoning).toBeDefined();
+    expect(result.reasoning!.text).toBe('r0');
+    expect(result.toolCallsExecuted).toHaveLength(1);
+    expect(result.toolCallsExecuted[0]?.functionName).toBe('echo');
+    // run_failed was audited with the error message.
+    const failed = audit.getAll().filter((e) => e.type === 'run_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.error).toContain('400');
+  });
+
+  it('exhausts the loop retry budget on a persistent transient error, then records run_failed', async () => {
+    const callLLM = vi.fn().mockRejectedValue(transientError);
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: fastBackoffConfig,
+      maxToolRounds: 5,
+      loopRetries: 1,
+    };
+
+    const result = await runToolLoop(deps, 'hi');
+
+    // 1 initial attempt + 1 loop-level retry = 2 total callLLM invocations.
+    expect(callLLM).toHaveBeenCalledTimes(2);
+    expect(result.failed).toBe(true);
+    expect(result.truncated).toBe(false);
+    expect(result.error).toContain('503');
+    expect(audit.getAll().filter((e) => e.type === 'run_failed')).toHaveLength(1);
+  });
+
+  it('does not retry when loopRetries is 0', async () => {
+    const callLLM = vi.fn().mockRejectedValue(transientError);
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: fastBackoffConfig,
+      maxToolRounds: 5,
+      loopRetries: 0,
+    };
+
+    const result = await runToolLoop(deps, 'hi');
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(result.failed).toBe(true);
+    expect(audit.getAll().filter((e) => e.type === 'run_failed')).toHaveLength(1);
+  });
+
+  it('records run_failed with a concrete error string when loopRetries is NaN (loop never entered)', async () => {
+    // A NaN loopRetries makes `attempt <= loopRetries` false on iteration 0, so
+    // callLLM is never invoked and lastError stays undefined. The run must still
+    // record run_failed with a real string — not the JS value `undefined` that
+    // JSON.stringify(undefined) would produce — so consumers reading
+    // result.error / the audit event get a usable message and `result.error
+    // .includes(...)` doesn't throw a TypeError.
+    const callLLM = vi.fn();
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: fastBackoffConfig,
+      maxToolRounds: 5,
+      loopRetries: Number.NaN,
+    };
+
+    const result = await runToolLoop(deps, 'hi');
+
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(result.failed).toBe(true);
+    expect(typeof result.error).toBe('string');
+    expect(result.error).toBe('[Forgewisp] Unknown error.');
+    const failed = audit.getAll().filter((e) => e.type === 'run_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.error).toBe('[Forgewisp] Unknown error.');
+  });
+
+  it('preserves the original Error stack on the run_failed audit event', async () => {
+    // A programming bug (here a stand-in TypeError) caught by the loop's
+    // terminal-failure path is laundered into { failed: true } with only the
+    // message in `error` — but the stack must survive on the audit event so the
+    // bug is debuggable from the audit export.
+    const bug = new TypeError('cannot read properties of undefined');
+    const callLLM = vi.fn().mockRejectedValue(bug);
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: fastBackoffConfig,
+      maxToolRounds: 5,
+      loopRetries: 1,
+    };
+
+    const result = await runToolLoop(deps, 'hi');
+
+    expect(result.failed).toBe(true);
+    expect(result.error).toBe('cannot read properties of undefined');
+    const failed = audit.getAll().filter((e) => e.type === 'run_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.errorStack).toBe(bug.stack);
+  });
+
+  it('rethrows on a user/run abort without recording run_failed', async () => {
+    const ac = new AbortController();
+    ac.abort(new Error('user canceled'));
+    // callLLM surfaces an abort-like error (mirrors http.ts `abortError`).
+    const callLLM = vi.fn().mockRejectedValue(new Error('[Forgewisp] Aborted.'));
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: fastBackoffConfig,
+      maxToolRounds: 5,
+      loopRetries: 1,
+    };
+
+    await expect(runToolLoop(deps, 'hi', ac.signal)).rejects.toThrow('[Forgewisp] Aborted.');
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    // An abort is not a failure — never audited as run_failed.
+    expect(audit.getAll().some((e) => e.type === 'run_failed')).toBe(false);
+  });
+
+  it('propagates an abort that fires during the backoff sleep (not audited as run_failed)', async () => {
+    vi.useFakeTimers();
+    try {
+      const ac = new AbortController();
+      // First attempt fails transiently (signal not yet aborted) so the loop
+      // enters the backoff sleep; the user then aborts mid-sleep.
+      const callLLM = vi.fn().mockRejectedValue(transientError);
+
+      // Large backoff so the sleep stays parked under fake timers and the abort
+      // lands mid-sleep (rather than the timer firing on advance(0)).
+      const parkedConfig: ForgewispConfig = {
+        ...baseConfig,
+        http: { retryBackoffBaseMs: 10_000, retryBackoffMaxMs: 10_000 },
+      };
+
+      const deps: ToolLoopDeps = {
+        callLLM,
+        registry,
+        audit,
+        config: parkedConfig,
+        maxToolRounds: 5,
+        loopRetries: 1,
+      };
+
+      const p = runToolLoop(deps, 'hi', ac.signal);
+      // Flush microtasks so the rejection is caught and the loop is now parked
+      // in the backoff sleep (a fake-timer setTimeout).
+      await vi.advanceTimersByTimeAsync(0);
+      // Abort during the sleep — the sleep's abort listener rejects with the
+      // abort reason, which propagates out of runToolLoop.
+      ac.abort(new Error('canceled mid-backoff'));
+
+      await expect(p).rejects.toThrow('canceled mid-backoff');
+      expect(callLLM).toHaveBeenCalledTimes(1);
+      expect(audit.getAll().some((e) => e.type === 'run_failed')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

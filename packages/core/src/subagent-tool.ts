@@ -266,6 +266,15 @@ export function createSubagentTool(cfg: SubagentToolConfig): FunctionDefinition<
       const sub = new ForgewispAgent(subConfig);
       sub.registerToolSet({ name: 'subagent-tools', tools: granted });
       const result = await sub.run(args.task, { signal: context?.signal });
+      if (result.failed) {
+        // A terminally failed subagent (its LLM call 503'd past the retry
+        // budget, a non-retryable error, etc.) must surface to the parent as a
+        // tool ERROR, not a successful empty result. Throwing here makes the
+        // parent's executor record `function_errored` and relay `{"error":…}`
+        // to the parent LLM — so the model knows the sub-task failed and can
+        // react, instead of believing it succeeded with no findings.
+        throw new Error(result.error ?? '[Forgewisp] Subagent run failed.');
+      }
       return trimResult(result);
     },
   };

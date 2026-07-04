@@ -247,4 +247,25 @@ describe('createSubagentTool', () => {
     expect(result.toolCallsExecuted).toBe(1);
     expect(result.toolCallsAborted).toBe(0);
   });
+
+  it('surfaces a terminally failed subagent as a thrown error (not a successful empty result)', async () => {
+    // A 400 is non-retryable → the subagent's loop records run_failed and
+    // resolves { failed: true }. The handler must throw so the parent's
+    // executor records function_errored and relays {"error":…} to the parent
+    // LLM — instead of returning a successful empty SpawnSubagentResult that
+    // would make the parent believe the sub-task succeeded with no findings.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'bad request' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tool = createSubagentTool({ config: baseConfig, tools: [makeTool('getCurrentTime')] });
+    await expect(tool.handler({ task: 'x' })).rejects.toThrow(/400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
