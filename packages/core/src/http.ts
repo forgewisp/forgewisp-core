@@ -2,8 +2,13 @@ import type { LLMMessage, LLMTool } from './wire.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 3;
-const DEFAULT_BACKOFF_BASE_MS = 500;
-const DEFAULT_BACKOFF_MAX_MS = 8_000;
+/**
+ * Default base/max backoff delays (ms), shared with the loop layer so both
+ * retry layers share one backoff curve. Exported for loop.ts to use as the
+ * fallback when `http.retryBackoffBaseMs` / `retryBackoffMaxMs` are unset.
+ */
+export const DEFAULT_BACKOFF_BASE_MS = 500;
+export const DEFAULT_BACKOFF_MAX_MS = 8_000;
 const DEFAULT_RETRYABLE_STATUS_CODES: ReadonlySet<number> = new Set([429, 503, 504]);
 /** Cap on the scrubbed body stored on an HttpError, to keep error messages bounded. */
 const MAX_ERROR_BODY_CHARS = 500;
@@ -104,7 +109,7 @@ function abortError(reason: unknown): Error {
 }
 
 /** Resolves after `ms`, rejecting early with the signal's reason if it aborts. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(abortError(signal.reason));
@@ -143,9 +148,10 @@ function parseRetryAfter(header: string | null, now: number): number | undefined
 
 /**
  * Full-jitter exponential backoff delay for a given 1-based attempt index.
- * `delay = random() * min(base * 2^(attempt-1), max)`.
+ * `delay = random() * min(base * 2^(attempt-1), max)`. Exported so the loop
+ * layer reuses the exact same backoff shape — one curve, implemented once.
  */
-function backoffDelay(attempt: number, base: number, max: number): number {
+export function backoffDelay(attempt: number, base: number, max: number): number {
   const exp = Math.min(base * 2 ** (attempt - 1), max);
   return Math.random() * exp;
 }
