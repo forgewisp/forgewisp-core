@@ -12,6 +12,12 @@ export function createAgent(config: ForgewispConfig): ForgewispAgent {
 
 export { defineToolSet } from './tool-set.js';
 
+// Structured HTTP error thrown by the internal HttpClient after exhausting its
+// retry budget (or immediately for a non-retryable status). Exported so callers
+// can branch on `isHttpError(err)` / `err.isRetryable` (e.g. a higher-level
+// retry layer). See `http.ts` for the retry/backoff contract.
+export { HttpError, isHttpError } from './http.js';
+
 // Subagent orchestration factory. Builds + runs a fresh subagent per `spawnSubagent` call
 // from a declarative config (no consumer-written spawn closure). Lives in core because it
 // needs `createAgent` at runtime (a same-package call). See `subagent-tool.ts` for the
@@ -40,4 +46,5 @@ export type {
   StreamingConfig,
   ReasoningMode,
   ToolContext,
+  HttpConfig,
 } from './types.js';

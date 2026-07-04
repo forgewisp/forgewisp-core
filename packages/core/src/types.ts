@@ -184,6 +184,33 @@ export interface AuditConfig {
   redact?: (event: AuditEvent) => AuditEvent;
 }
 
+/**
+ * HTTP-layer knobs for the LLM request: retry budget and backoff. All fields
+ * are optional with sensible defaults. Passed through to the internal
+ * `HttpClient`; the request timeout (`requestTimeoutMs`) remains a top-level
+ * `ForgewispConfig` field for backwards compatibility.
+ */
+export interface HttpConfig {
+  /**
+   * Max retry attempts after the first request. Defaults to 3. Set to 0 to
+   * disable retry (a single request, fail-fast).
+   */
+  maxRetries?: number;
+  /** Base delay for exponential backoff, in ms. Defaults to 500. */
+  retryBackoffBaseMs?: number;
+  /**
+   * Cap on per-attempt delay, in ms. Defaults to 8000. Caps both the jittered
+   * exponential backoff AND a server-directed `Retry-After` (honored directly,
+   * then clamped to this cap).
+   */
+  retryBackoffMaxMs?: number;
+  /**
+   * HTTP status codes eligible for retry, in addition to network resets (fetch
+   * rejections with no response). Defaults to `[429, 503, 504]`.
+   */
+  retryableStatusCodes?: number[];
+}
+
 export interface ForgewispConfig {
   /** Any OpenAI-compatible endpoint URL. */
   llmEndpoint: string;
@@ -213,6 +240,8 @@ export interface ForgewispConfig {
   streaming?: StreamingConfig;
   /** Per-request timeout in milliseconds. Defaults to 60000. Set to 0 to disable. */
   requestTimeoutMs?: number;
+  /** HTTP-layer retry/backoff configuration. */
+  http?: HttpConfig;
   /** Max tool-call rounds before the loop truncates. Defaults to 10. */
   maxToolRounds?: number;
 }

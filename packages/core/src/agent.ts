@@ -37,6 +37,10 @@ export class ForgewispAgent {
       apiKey: config.apiKey,
       model: config.model,
       requestTimeoutMs: config.requestTimeoutMs,
+      maxRetries: config.http?.maxRetries,
+      retryBackoffBaseMs: config.http?.retryBackoffBaseMs,
+      retryBackoffMaxMs: config.http?.retryBackoffMaxMs,
+      retryableStatusCodes: config.http?.retryableStatusCodes,
     });
   }
 
@@ -105,16 +109,19 @@ export class ForgewispAgent {
     const tools = this.registry.toLLMTools();
     const streamingConfig = this.config.streaming;
 
-    const mergedSignal = this.http.signalFor(signal);
-    const response = await this.http.post(
+    // Pass the external (user/run) signal to `post`; it applies the per-attempt
+    // timeout internally and refreshes it each retry. The returned `signal` is
+    // the one bound to the successful fetch — reuse it for streaming so the
+    // same per-attempt timeout keeps covering body consumption.
+    const { response, signal: responseSignal } = await this.http.post(
       messages,
       tools,
       streamingConfig !== undefined,
-      mergedSignal,
+      signal,
     );
 
     if (streamingConfig) {
-      const result = await streamCompletion(response, streamingConfig, this.audit, mergedSignal);
+      const result = await streamCompletion(response, streamingConfig, this.audit, responseSignal);
       return {
         message: result.message,
         reasoning: result.reasoning,
@@ -124,7 +131,8 @@ export class ForgewispAgent {
       };
     }
 
-    // Non-streaming path
+    // Non-streaming path. The fetch signal (responseSignal) still covers
+    // response.json() — a timeout / abort during body consumption rejects here.
     const data = (await response.json()) as {
       choices?: Array<{ message: LLMMessage }>;
     };
