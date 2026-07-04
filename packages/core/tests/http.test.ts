@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Mock } from 'vitest';
-import { HttpClient } from '../src/http.js';
+import { HttpError, HttpClient, isHttpError } from '../src/http.js';
 import type { LLMMessage, LLMTool } from '../src/wire.js';
 
 const messages: LLMMessage[] = [{ role: 'user', content: 'hi' }];
@@ -107,12 +107,24 @@ describe('HttpClient', () => {
 
   // ── non-ok response ───────────────────────────────────────────────────────
 
-  it('throws a descriptive error when the response is not ok', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('upstream down', { status: 503 }));
+  it('throws an HttpError (non-retryable) for a non-retryable status, without retrying', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('bad request', { status: 400 }));
     const client = new HttpClient({ llmEndpoint: 'https://x', model: 'm', requestTimeoutMs: 0 });
-    await expect(client.post(messages, [], false)).rejects.toThrow(
-      '[Forgewisp] LLM request failed (503): upstream down',
-    );
+    const promise = client.post(messages, [], false);
+    await expect(promise).rejects.toBeInstanceOf(HttpError);
+    await expect(promise).rejects.toMatchObject({
+      name: 'HttpError',
+      status: 400,
+      isRetryable: false,
+      body: 'bad request',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('isHttpError narrows HttpError and rejects other errors', () => {
+    expect(isHttpError(new HttpError(503, 'x', true))).toBe(true);
+    expect(isHttpError(new Error('nope'))).toBe(false);
+    expect(isHttpError('string')).toBe(false);
   });
 
   // ── signalFor / mergeAbortSignals ──────────────────────────────────────────
@@ -175,5 +187,344 @@ describe('HttpClient', () => {
     await client.post(messages, [], false);
     const init = lastCall(fetchMock)[1];
     expect(init).not.toHaveProperty('signal');
+  });
+
+  // ── retry / backoff / Retry-After ───────────────────────────────────────────
+  //
+  // These tests use fake timers + a Math.random spy so backoff delays are
+  // deterministic. Full-jitter backoff = random() * min(base * 2^(attempt-1), max);
+  // spying random at 0.5 yields base*2^(attempt-1)*0.5 for the no-Retry-After path.
+
+  describe('retry / backoff', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    });
+
+    it('retries a 503 then succeeds and returns the ok response', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('upstream down', { status: 503 }))
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      // attempt 1: backoffDelay = 0.5 * 500 = 250
+      await vi.advanceTimersByTimeAsync(250);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('exhausts the retry budget on persistent 503 and throws HttpError(503, isRetryable=true)', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(new Response('upstream down', { status: 503 })),
+      );
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        maxRetries: 3,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      pending.catch(() => {}); // suppress unhandled rejection until the assert below
+      // 3 retries: delays 250 (0.5*500), 500 (0.5*1000), 1000 (0.5*2000)
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await expect(pending).rejects.toMatchObject({
+        name: 'HttpError',
+        status: 503,
+        isRetryable: true,
+        body: 'upstream down',
+      });
+      // 1 initial + 3 retries
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+
+    it('retries a 429 and honors a Retry-After header in seconds', async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response('rate limited', {
+            status: 429,
+            headers: { 'Retry-After': '2' },
+          }),
+        )
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      // Retry-After: 2 → 2000ms (no jitter on the Retry-After path)
+      await vi.advanceTimersByTimeAsync(1999);
+      await expect(Promise.race([pending, Promise.resolve('pending')])).resolves.toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('honors a Retry-After HTTP-Date instead of seconds', async () => {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      const retryAfterDate = new Date(Date.now() + 3000).toUTCString();
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response('rate limited', {
+            status: 503,
+            headers: { 'Retry-After': retryAfterDate },
+          }),
+        )
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      await vi.advanceTimersByTimeAsync(3000);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('falls back to backoff when Retry-After is malformed', async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response('rate limited', {
+            status: 503,
+            headers: { 'Retry-After': 'not-a-date-or-number' },
+          }),
+        )
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      // malformed Retry-After → backoff path: 0.5 * 500 = 250
+      await vi.advanceTimersByTimeAsync(250);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('falls back to backoff when no Retry-After header is present', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('upstream down', { status: 504 }))
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      await vi.advanceTimersByTimeAsync(250);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a network reset (fetch TypeError) then succeeds', async () => {
+      fetchMock
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      await vi.advanceTimersByTimeAsync(250);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('exhausts the retry budget on persistent network resets and throws HttpError(0, isRetryable=true)', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        maxRetries: 2,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false);
+      pending.catch(() => {}); // suppress unhandled rejection until the assert below
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(500);
+
+      await expect(pending).rejects.toMatchObject({
+        name: 'HttpError',
+        status: 0,
+        isRetryable: true,
+      });
+      // 1 initial + 2 retries
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not retry when the fetch rejects because the signal aborted', async () => {
+      const ac = new AbortController();
+      fetchMock.mockRejectedValue(
+        (() => {
+          const e = new Error('aborted');
+          e.name = 'AbortError';
+          return e;
+        })(),
+      );
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        maxRetries: 3,
+      });
+      ac.abort(new Error('user cancelled'));
+
+      // The already-aborted signal makes fetch reject; post surfaces the
+      // signal's abort reason (not the fetch error) without retrying.
+      await expect(client.post(messages, [], false, ac.signal)).rejects.toThrow('user cancelled');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts mid-backoff: no further retry, surfaces the abort reason', async () => {
+      const ac = new AbortController();
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(new Response('upstream down', { status: 503 })),
+      );
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        maxRetries: 3,
+        retryBackoffBaseMs: 500,
+      });
+
+      const pending = client.post(messages, [], false, ac.signal);
+      pending.catch(() => {}); // suppress unhandled rejection until the assert below
+      // advance partway through the first backoff (250ms), then abort
+      await vi.advanceTimersByTimeAsync(100);
+      ac.abort(new Error('user cancelled'));
+      await vi.advanceTimersByTimeAsync(200);
+
+      await expect(pending).rejects.toThrow('user cancelled');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('renews the per-attempt timeout each retry (timeout does not bound the whole sequence)', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('upstream down', { status: 503 }))
+        .mockResolvedValueOnce(okResponse());
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 100, // per-attempt timeout
+        retryBackoffBaseMs: 500, // backoff 250ms (0.5 * 500) > 100ms timeout
+      });
+
+      const pending = client.post(messages, [], false);
+      pending.catch(() => {});
+      // The 250ms backoff exceeds the 100ms per-attempt timeout. Under the old
+      // single-merged-signal design the timeout would fire mid-backoff and
+      // surface "Request timed out." Instead the timeout is disarmed during
+      // backoff, the backoff completes, and the retry succeeds.
+      await vi.advanceTimersByTimeAsync(250);
+      const { response } = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('surfaces an abort during response.text() instead of masking it as an HttpError', async () => {
+      const ac = new AbortController();
+      const resp = new Response('bad request', { status: 400 });
+      // Simulate the body stream aborting mid-read (fetch returned headers, but
+      // text() rejects because the signal aborted during body consumption).
+      vi.spyOn(resp, 'text').mockRejectedValue(
+        (() => {
+          const e = new Error('aborted');
+          e.name = 'AbortError';
+          return e;
+        })(),
+      );
+      fetchMock.mockResolvedValueOnce(resp);
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        maxRetries: 3,
+      });
+      ac.abort(new Error('user cancelled'));
+
+      // Without the post-text abort re-check, the .catch(() => '') on text()
+      // would swallow the AbortError and a 400 would surface as HttpError(400).
+      await expect(client.post(messages, [], false, ac.signal)).rejects.toThrow('user cancelled');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('maxRetries: 0 disables retry (fail-fast on a retryable status)', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(new Response('upstream down', { status: 503 })),
+      );
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        requestTimeoutMs: 0,
+        maxRetries: 0,
+      });
+
+      await expect(client.post(messages, [], false)).rejects.toMatchObject({
+        name: 'HttpError',
+        status: 503,
+        isRetryable: true,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('scrubs the apiKey, Bearer tokens, and Authorization lines from the HttpError body', async () => {
+      const body = `{"error":"key sk-secret-key is invalid","auth":"Bearer abcdef123","header":"Authorization: Bearer xyz"}`;
+      fetchMock.mockResolvedValueOnce(new Response(body, { status: 500 }));
+      const client = new HttpClient({
+        llmEndpoint: 'https://x',
+        model: 'm',
+        apiKey: 'sk-secret-key',
+        requestTimeoutMs: 0,
+      });
+
+      const promise = client.post(messages, [], false);
+      await expect(promise).rejects.toBeInstanceOf(HttpError);
+      const err = (await promise.catch((e: unknown) => e)) as HttpError;
+      expect(err.body).not.toContain('sk-secret-key');
+      expect(err.body).not.toContain('abcdef123');
+      expect(err.body).not.toContain('Bearer xyz');
+      expect(err.body).toContain('[REDACTED]');
+      expect(fetchMock).toHaveBeenCalledTimes(1); // 500 is non-retryable
+    });
   });
 });

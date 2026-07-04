@@ -198,6 +198,9 @@ function buildSubConfig(cfg: SubagentToolConfig, args: SpawnSubagentArgs): Forge
     apiKey: parent.apiKey,
     model: parent.model,
     requestTimeoutMs: parent.requestTimeoutMs,
+    // Inherit the parent's HTTP retry/backoff config so spawned subagents honor
+    // the same retry budget rather than falling back to defaults.
+    http: parent.http,
     // The subagent is a focused worker, NOT an orchestrator — never inherit the parent's
     // system prompt. Per-call override beats the factory default.
     systemPrompt: args.systemPrompt ?? cfg.systemPrompt,
