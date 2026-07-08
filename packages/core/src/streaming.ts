@@ -111,14 +111,43 @@ function decodeChunk(chunk: OpenAIChunk): DecodedChunk {
   return result;
 }
 
-function assembleToolCalls(map: Map<number, ToolCallAccumulator>): LLMToolCall[] {
+interface AssembledToolCall {
+  /** The delta index this call was accumulated under. */
+  index: number;
+  call: LLMToolCall;
+}
+
+/**
+ * Assembles the accumulated tool-call fragments into OpenAI-shaped `LLMToolCall`s,
+ * sorted by delta index ascending. Returns the index alongside each call so
+ * downstream code (id synthesis) can use the index without re-sorting the same
+ * map — the sort lives in exactly one place, and the positional correspondence
+ * between the index and its call is enforced by construction rather than
+ * re-derived.
+ */
+function assembleToolCalls(map: Map<number, ToolCallAccumulator>): AssembledToolCall[] {
   return Array.from(map.entries())
     .sort(([a], [b]) => a - b)
-    .map(([, tc]) => ({
-      id: tc.id,
-      type: 'function' as const,
-      function: { name: tc.nameParts.join(''), arguments: tc.argumentsParts.join('') },
+    .map(([index, tc]) => ({
+      index,
+      call: {
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.nameParts.join(''), arguments: tc.argumentsParts.join('') },
+      },
     }));
+}
+
+/**
+ * Builds a recognizable, globally-unique id for a tool call that arrived
+ * without one. The `call_synth_` prefix distinguishes synthesized ids from
+ * server-supplied ones in logs and audit exports. The id embeds the delta
+ * index for debuggability and a UUID for global uniqueness — so two rounds
+ * that each lack an id at the same index cannot collide within a request,
+ * which would let an API mis-pair a `tool` result with the wrong call.
+ */
+function synthesizeToolCallId(index: number): string {
+  return `call_synth_${index}_${crypto.randomUUID()}`;
 }
 
 async function parseOpenAIStream(
@@ -210,7 +239,23 @@ async function parseOpenAIStream(
     tagState.pending = '';
   }
 
-  const toolCalls = assembleToolCalls(toolCallMap);
+  // Some OpenAI-compatible servers never stream an `id` for a tool-call index
+  // (or stream it only on a later delta that straggles / never arrives). An
+  // empty `id` silently breaks `tool_call_id` matching when the result is
+  // serialized back into the message history (`loop.ts`). Synthesize a stable,
+  // globally-unique id for any call still missing one and record a
+  // `tool_call_id_missing` audit event per affected call so the gap is
+  // observable. Done here (not in `assembleToolCalls`) because the audit handle
+  // is in scope only at this layer.
+  const assembled = assembleToolCalls(toolCallMap);
+  const toolCalls = assembled.map(({ call }) => call);
+  for (const { index, call } of assembled) {
+    if (call.id) continue;
+    call.id = synthesizeToolCallId(index);
+    audit?.record('tool_call_id_missing', call.function.name || 'unknown', {
+      args: { index, synthesizedId: call.id },
+    });
+  }
 
   // ── Handle o1/o3 reasoning token annotation ──────────────────────────
   if (reasoning.mode === 'extended' && reasoningTokens > 0) {

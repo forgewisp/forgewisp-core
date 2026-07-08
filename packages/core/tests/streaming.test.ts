@@ -462,3 +462,98 @@ describe('streamCompletion — line-ending & framing edge cases', () => {
     expect(body.locked).toBe(false);
   });
 });
+
+// ─── Tool-call id fallback (P1.3) ─────────────────────────────────────────────
+//
+// Some OpenAI-compatible servers never stream an `id` for a tool-call index.
+// Without a fallback the assembled id is `''`, which silently breaks
+// `tool_call_id` matching when the result is serialized back into the message
+// history. The parser synthesizes a stable, non-empty id and records a
+// `tool_call_id_missing` audit event per affected call.
+
+describe('streamCompletion — tool-call id fallback', () => {
+  it('synthesizes a non-empty id and audits when no id ever arrives', async () => {
+    const audit = new AuditLog();
+    const config: StreamingConfig = {};
+
+    // Index 0 gets name + arguments but never an id; index 1 arrives complete.
+    const response = mockStreamResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'noIdTool', arguments: '{"x":1}' } }] }, finish_reason: null }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, id: 'real_id', function: { name: 'withId', arguments: '{}' } }] }, finish_reason: null }] })}`,
+      openAIDone(),
+    ]);
+
+    const result = await streamCompletion(response, config, audit);
+
+    expect(result.message.tool_calls).toHaveLength(2);
+    const [synth, real] = result.message.tool_calls!;
+    expect(synth!.id).not.toBe('');
+    expect(synth!.id).toMatch(/^call_synth_0_/);
+    expect(synth!.function.name).toBe('noIdTool');
+    expect(synth!.function.arguments).toBe('{"x":1}');
+    expect(real!.id).toBe('real_id');
+
+    const missing = audit.getAll().filter((e) => e.type === 'tool_call_id_missing');
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.functionName).toBe('noIdTool');
+    expect(missing[0]!.args).toEqual({ index: 0, synthesizedId: synth!.id });
+  });
+
+  it('does not synthesize or audit when every call carries an id', async () => {
+    const audit = new AuditLog();
+    const config: StreamingConfig = {};
+
+    const response = mockStreamResponse([
+      openAIToolChunk(0, 'call_a', 'first', '{}'),
+      openAIToolChunk(1, 'call_b', 'second', '{}'),
+      openAIDone(),
+    ]);
+
+    const result = await streamCompletion(response, config, audit);
+
+    expect(result.message.tool_calls![0]!.id).toBe('call_a');
+    expect(result.message.tool_calls![1]!.id).toBe('call_b');
+    expect(audit.getAll().some((e) => e.type === 'tool_call_id_missing')).toBe(false);
+  });
+
+  it('synthesizes distinct ids per missing call and emits one event each', async () => {
+    const audit = new AuditLog();
+    const config: StreamingConfig = {};
+
+    // Two calls, neither ever streams an id.
+    const response = mockStreamResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'a', arguments: '{}' } }] }, finish_reason: null }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, function: { name: 'b', arguments: '{}' } }] }, finish_reason: null }] })}`,
+      openAIDone(),
+    ]);
+
+    const result = await streamCompletion(response, config, audit);
+
+    const [first, second] = result.message.tool_calls!;
+    expect(first!.id).toMatch(/^call_synth_0_/);
+    expect(second!.id).toMatch(/^call_synth_1_/);
+    expect(first!.id).not.toBe(second!.id);
+
+    const missing = audit.getAll().filter((e) => e.type === 'tool_call_id_missing');
+    expect(missing).toHaveLength(2);
+    expect(missing.map((e) => e.args?.index).sort()).toEqual([0, 1]);
+  });
+
+  it('uses "unknown" as the function name when the id and name both never arrive', async () => {
+    const audit = new AuditLog();
+    const config: StreamingConfig = {};
+
+    // Only arguments stream — no id, no name.
+    const response = mockStreamResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"a":1}' } }] }, finish_reason: null }] })}`,
+      openAIDone(),
+    ]);
+
+    const result = await streamCompletion(response, config, audit);
+
+    expect(result.message.tool_calls![0]!.id).toMatch(/^call_synth_0_/);
+    const missing = audit.getAll().filter((e) => e.type === 'tool_call_id_missing');
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.functionName).toBe('unknown');
+  });
+});
