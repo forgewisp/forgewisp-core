@@ -113,7 +113,8 @@ export type AuditEventType =
   | 'audit_callback_errored'
   | 'max_tool_rounds_reached'
   | 'run_failed'
-  | 'stream_malformed';
+  | 'stream_malformed'
+  | 'tool_call_id_missing';
 
 export interface AuditEvent {
   id: string;

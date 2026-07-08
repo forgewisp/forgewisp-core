@@ -3,6 +3,7 @@ import { runToolLoop, ToolLoopDeps } from '../src/loop.js';
 import { FunctionRegistry } from '../src/registry.js';
 import { AuditLog } from '../src/audit.js';
 import { HttpError } from '../src/http.js';
+import { streamCompletion } from '../src/streaming.js';
 import { ForgewispConfig } from '../src/types.js';
 import type { LLMMessage } from '../src/wire.js';
 
@@ -709,5 +710,106 @@ describe('runToolLoop — round recovery (P1.2)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ─── Synthesized tool-call id propagation (P1.3) ─────────────────────────────
+//
+// The streaming parser synthesizes a `call_synth_*` id for any tool-call index
+// that never streams an id. The loop must propagate that synthesized id through
+// executeToolCalls (call.id → result.toolCallId) and into the `tool` message's
+// `tool_call_id` so the server can pair the result with the request. Driving a
+// no-id delta sequence through the REAL streamCompletion (not a stubbed
+// callLLM) verifies the full linkage end-to-end — a regression in any link
+// (executor re-deriving/omitting toolCallId, loop using a different field)
+// breaks the pairing and fails this test.
+
+function mockNoIdToolCallStream(): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, function: { name: 'readThing', arguments: '{"x":1}' } }],
+                },
+                finish_reason: null,
+              },
+            ],
+          })}\n`,
+        ),
+      );
+      controller.enqueue(encoder.encode('data: [DONE]\n'));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200 });
+}
+
+describe('runToolLoop — synthesized tool-call id propagation', () => {
+  it('propagates a streaming-synthesized id to the tool message tool_call_id', async () => {
+    const registry = new FunctionRegistry();
+    const audit = new AuditLog();
+    registry.register({
+      name: 'readThing',
+      description: 'Read a thing',
+      riskTier: 'read',
+      parameters: {
+        type: 'object',
+        properties: { x: { type: 'number' } },
+        required: ['x'],
+      },
+      handler: ({ x }) => x,
+    });
+
+    const seen: LLMMessage[][] = [];
+    let synthesizedId: string | undefined;
+    const callLLM: ToolLoopDeps['callLLM'] = (messages, signal) => {
+      seen.push([...messages]);
+      const round = messages.filter((m) => m.role === 'tool').length;
+      if (round === 0) {
+        // Real streamCompletion on a no-id delta sequence → synthesizes the id.
+        return streamCompletion(mockNoIdToolCallStream(), {}, audit, signal).then((r) => {
+          synthesizedId = r.message.tool_calls?.[0]?.id;
+          return { message: r.message, reasoning: r.reasoning };
+        });
+      }
+      return Promise.resolve({
+        message: { role: 'assistant', content: 'done' },
+        reasoning: '',
+      });
+    };
+
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: baseConfig,
+      maxToolRounds: 5,
+      loopRetries: 1,
+    };
+
+    const result = await runToolLoop(deps, 'read the thing');
+
+    // The assistant message carried a synthesized (non-empty, call_synth_*) id.
+    expect(synthesizedId).toBeDefined();
+    expect(synthesizedId).not.toBe('');
+    expect(synthesizedId!).toMatch(/^call_synth_0_/);
+
+    // Round 1's request body contains the tool message whose tool_call_id is
+    // the SAME synthesized id — proving the linkage survived the loop +
+    // executor (call.id → result.toolCallId → tool_call_id).
+    const round1 = seen[1]!;
+    const toolMessage = round1.find(
+      (m) => m.role === 'tool' && 'tool_call_id' in m && m.tool_call_id === synthesizedId,
+    );
+    expect(toolMessage).toBeDefined();
+
+    expect(result.truncated).toBe(false);
+    expect(result.response).toBe('done');
+    expect(audit.getAll().filter((e) => e.type === 'tool_call_id_missing')).toHaveLength(1);
   });
 });
