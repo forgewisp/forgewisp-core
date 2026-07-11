@@ -3,6 +3,26 @@
   "version": "0.6.4",
   "description": "Model Context Protocol (MCP) client support for Forgewisp agents — expose an MCP server's tools as agent FunctionDefinitions",
   "license": "MIT",
+  "author": "Angelo Cavallo",
+  "homepage": "https://github.com/forgewisp/forgewisp-core/tree/main/packages/mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/forgewisp/forgewisp-core.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/forgewisp/forgewisp-core/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/forgewisp"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -43,6 +63,13 @@
     "tool-use",
     "forgewisp",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "mcp-client",
+    "streamable-http",
+    "oauth",
+    "pkce",
+    "claude",
+    "anthropic",
+    "typescript"
   ]
 }

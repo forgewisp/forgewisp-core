@@ -57,7 +57,7 @@ jobs:
 
       - name: Publish @forgewisp/core to npm
         working-directory: packages/core
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -69,7 +69,7 @@ jobs:
       # version is already on the registry.
       - name: Publish @forgewisp/bundled-tools to npm
         working-directory: packages/bundled-tools
-        run: pnpm publish --access public --no-git-checks
+        run: pnpm publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -79,7 +79,7 @@ jobs:
       # bundled-tools) are already on the registry.
       - name: Publish @forgewisp/mcp to npm
         working-directory: packages/mcp
-        run: pnpm publish --access public --no-git-checks
+        run: pnpm publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
