@@ -225,14 +225,29 @@ describe('executeToolCalls', () => {
   });
 
   it('runs independent tool calls concurrently and preserves audit order', async () => {
-    // First handler sleeps 50ms; second is instant. Sequential execution would
-    // take ≥100ms; concurrent must come in well under that.
-    const slow = vi
-      .fn()
-      .mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ who: 'slow' }), 50)),
-      );
-    const fast = vi.fn().mockResolvedValue({ who: 'fast' });
+    // Prove concurrency structurally rather than with a wall-clock threshold:
+    // the `slow` handler stays in-flight (started, not yet resolved) while the
+    // `fast` handler runs. Under sequential execution `slow` would have fully
+    // resolved before `fast` started, so `fastRanDuringSlow` could not be set.
+    // This is deterministic and immune to CI timer/scheduling jitter, which a
+    // `<100ms` wall-clock assertion is not.
+    let slowStarted = false;
+    let slowResolved = false;
+    const slow = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          slowStarted = true;
+          setTimeout(() => {
+            slowResolved = true;
+            resolve({ who: 'slow' });
+          }, 50);
+        }),
+    );
+    let fastRanDuringSlow = false;
+    const fast = vi.fn().mockImplementation(() => {
+      if (slowStarted && !slowResolved) fastRanDuringSlow = true;
+      return Promise.resolve({ who: 'fast' });
+    });
     registry.register({
       name: 'slow',
       description: 'Slow',
@@ -248,16 +263,14 @@ describe('executeToolCalls', () => {
       handler: fast,
     });
 
-    const start = Date.now();
     const { executed, toolResults } = await executeToolCalls(
       [makeToolCall('slow', {}), makeToolCall('fast', {})],
       registry,
       audit,
       baseConfig,
     );
-    const elapsed = Date.now() - start;
 
-    expect(elapsed).toBeLessThan(100);
+    expect(fastRanDuringSlow).toBe(true);
     expect(executed).toHaveLength(2);
     // Input order preserved in result arrays even though fast finished first.
     expect(toolResults[0]!.functionName).toBe('slow');
