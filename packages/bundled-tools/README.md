@@ -2,6 +2,10 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/forgewisp/forgewisp-core?style=social)](https://github.com/forgewisp/forgewisp-core)
 [![GitHub repo](https://img.shields.io/badge/repo-forgewisp%2Fforgewisp--core-blue)](https://github.com/forgewisp/forgewisp-core)
+[![npm version](https://img.shields.io/npm/v/@forgewisp/bundled-tools.svg)](https://www.npmjs.com/package/@forgewisp/bundled-tools)
+[![npm downloads](https://img.shields.io/npm/dw/@forgewisp/bundled-tools.svg)](https://www.npmjs.com/package/@forgewisp/bundled-tools)
+[![CI](https://github.com/forgewisp/forgewisp-core/actions/workflows/ci.yml/badge.svg)](https://github.com/forgewisp/forgewisp-core/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@forgewisp/bundled-tools.svg)](https://github.com/forgewisp/forgewisp-core/blob/main/LICENSE)
 
 > ⭐ **Found Forgewisp useful? [Star the repo](https://github.com/forgewisp/forgewisp-core) on GitHub.**
 

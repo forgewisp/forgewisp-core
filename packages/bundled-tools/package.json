@@ -1,8 +1,29 @@
 {
   "name": "@forgewisp/bundled-tools",
-  "version": "0.6.4",
-  "description": "Browser-safe, ready-to-register FunctionDefinition tools for Forgewisp agents",
+  "version": "0.6.5",
+  "description": "Browser-effects tool catalog for AI agents — clipboard, geolocation, UUIDs, hashing, base64, QR codes, and more. Forgewisp-ready, safe by default.",
   "license": "MIT",
+  "author": "Angelo Cavallo",
+  "homepage": "https://github.com/forgewisp/forgewisp-core/tree/main/packages/bundled-tools#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/forgewisp/forgewisp-core.git",
+    "directory": "packages/bundled-tools"
+  },
+  "bugs": {
+    "url": "https://github.com/forgewisp/forgewisp-core/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/forgewisp"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -39,6 +60,17 @@
     "function-calling",
     "tool-use",
     "forgewisp",
-    "bundled-tools"
+    "bundled-tools",
+    "browser",
+    "web-apis",
+    "clipboard",
+    "geolocation",
+    "uuid",
+    "hashing",
+    "base64",
+    "qrcode",
+    "localstorage",
+    "sessionstorage",
+    "typescript"
   ]
 }
