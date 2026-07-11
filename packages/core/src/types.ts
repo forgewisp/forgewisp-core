@@ -111,6 +111,7 @@ export type AuditEventType =
   | 'function_executed'
   | 'function_errored'
   | 'audit_callback_errored'
+  | 'redact_errored'
   | 'max_tool_rounds_reached'
   | 'run_failed'
   | 'stream_malformed'

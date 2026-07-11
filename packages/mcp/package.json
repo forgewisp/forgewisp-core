@@ -1,6 +1,6 @@
 {
   "name": "@forgewisp/mcp",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Model Context Protocol (MCP) client support for Forgewisp agents — expose an MCP server's tools as agent FunctionDefinitions",
   "license": "MIT",
   "type": "module",
