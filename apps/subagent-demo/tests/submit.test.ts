@@ -99,6 +99,32 @@ afterEach(() => {
   localStorage.removeItem(CONFIG_KEY);
 });
 
+// Builds an AbortError like the one fetch rejects with when its signal aborts.
+// The http layer checks `signal.aborted` (not the error name), but a real
+// AbortError is the faithful shape.
+function makeAbortError(): Error {
+  const e = new Error('aborted');
+  e.name = 'AbortError';
+  return e;
+}
+
+// A fetch mock that hangs until the request's abort signal fires, then rejects
+// with an AbortError — mirroring the real fetch's abort behavior so an in-flight
+// run actually rejects when Stop is clicked.
+function hangUntilAbortFetch(): typeof fetch {
+  return vi.fn().mockImplementation(
+    (_url, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal as AbortSignal | undefined;
+        if (signal?.aborted) {
+          reject(makeAbortError());
+          return;
+        }
+        signal?.addEventListener('abort', () => reject(makeAbortError()), { once: true });
+      }),
+  );
+}
+
 describe('submit race guard', () => {
   beforeAll(async () => {
     vi.resetModules();
@@ -113,6 +139,11 @@ describe('submit race guard', () => {
 
   afterAll(() => {
     vi.restoreAllMocks();
+    // Discard the cached module: the run above never resolves (its fetch ignores
+    // the signal), so inFlightController stays set in the module closure. Without
+    // a reset, a later describe that reuses this cached module without its own
+    // resetModules would have every submit silently blocked by the race guard.
+    vi.resetModules();
   });
 
   it('blocks a second submit while a run is in flight', async () => {
@@ -342,5 +373,78 @@ describe('example prompt chips', () => {
 
     expect(chips[0]!.disabled).toBe(true);
     vi.restoreAllMocks();
+  });
+});
+
+describe('stop button', () => {
+  beforeAll(async () => {
+    vi.resetModules();
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(VALID_CONFIG));
+    document.body.innerHTML = DEMO_BODY;
+
+    globalThis.fetch = hangUntilAbortFetch();
+
+    await import('../src/main.js');
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('aborts the in-flight run, surfaces a stopped state, and re-enables submit', async () => {
+    const form = document.getElementById('chat-form') as HTMLFormElement;
+    const input = document.getElementById('chat-input') as HTMLInputElement;
+    const sendButton = form.querySelector('button') as HTMLButtonElement;
+    const chat = document.getElementById('chat-messages')!;
+
+    input.value = 'long message';
+    form.dispatchEvent(new SubmitEvent('submit', { cancelable: true, bubbles: true }));
+    // Let the synchronous portion of the handler run (sets inFlightController,
+    // morphs the button to Stop).
+    await Promise.resolve();
+
+    expect(sendButton.textContent).toBe('Stop');
+    expect(input.disabled).toBe(true);
+
+    sendButton.click(); // click Stop
+
+    await vi.waitFor(() => {
+      expect(chat.querySelectorAll('.message-stopped').length).toBe(1);
+    });
+    expect(input.disabled).toBe(false);
+    expect(sendButton.textContent).toBe('Send');
+  });
+
+  it('does not abort on the trailing click of a double-click on Send', async () => {
+    const form = document.getElementById('chat-form') as HTMLFormElement;
+    const input = document.getElementById('chat-input') as HTMLInputElement;
+    const sendButton = form.querySelector('button') as HTMLButtonElement;
+    const chat = document.getElementById('chat-messages')!;
+
+    input.value = 'long message';
+    form.dispatchEvent(new SubmitEvent('submit', { cancelable: true, bubbles: true }));
+    // Synchronous portion: inFlightController set, button morphed to Stop.
+    await Promise.resolve();
+    // The DOM persists across tests in this describe, so capture the marker
+    // count after submit and assert the trailing click does not add one.
+    const stoppedBefore = chat.querySelectorAll('.message-stopped').length;
+
+    // The second click of a double-click on Send (detail === 2) must NOT abort
+    // the just-started run — it is part of the same gesture that sent, not a
+    // genuine Stop (which is a fresh gesture with detail === 1).
+    sendButton.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true, detail: 2 }),
+    );
+    await Promise.resolve();
+
+    expect(chat.querySelectorAll('.message-stopped').length).toBe(stoppedBefore);
+    expect(sendButton.textContent).toBe('Stop');
+    expect(input.disabled).toBe(true);
+
+    // Clean up: a genuine single Stop (programmatic .click() is detail 0) aborts.
+    sendButton.click();
+    await vi.waitFor(() => {
+      expect(chat.querySelectorAll('.message-stopped').length).toBe(stoppedBefore + 1);
+    });
   });
 });

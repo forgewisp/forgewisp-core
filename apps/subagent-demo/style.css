@@ -526,6 +526,18 @@ body {
   cursor: pointer;
 }
 
+.chat-form button.stop {
+  background: var(--danger);
+  color: #fff;
+}
+
+.message-stopped {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
 /* ─── Example prompt chips ─────────────────────────────────────────────────── */
 
 .example-prompts {

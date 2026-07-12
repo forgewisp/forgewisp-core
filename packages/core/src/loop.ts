@@ -185,6 +185,20 @@ export async function runToolLoop(
         content,
       });
     }
+
+    // A user/run abort during tool execution (e.g. Stop clicked while a
+    // confirmation dialog was open) must propagate as a rejection, not fall
+    // through to the max-rounds `truncated` return — otherwise the caller can't
+    // distinguish an intentional stop from a genuine cap hit. Without this,
+    // aborting during the final round's tool calls resolves `{ truncated: true }`
+    // instead of rejecting, so the caller's abort branch never runs. On earlier
+    // rounds this throws one iteration sooner than the next `callLLM` would
+    // (which also rethrows on `signal?.aborted`), so the observable result is
+    // unchanged for them. Like every other abort path, this is never audited as
+    // `run_failed`.
+    if (signal?.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new Error('[Forgewisp] Aborted.');
+    }
   }
 
   deps.audit.record('max_tool_rounds_reached', 'system', {
