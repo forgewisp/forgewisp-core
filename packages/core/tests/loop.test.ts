@@ -430,6 +430,58 @@ describe('runToolLoop — multi-round orchestration', () => {
     expect(maxEvents[0]!.error).toContain('Exceeded 3');
   });
 
+  it('rejects (not truncates) when the run is aborted during the final tool round', async () => {
+    // A write-tier tool whose confirm hangs until the test resolves it, mirroring
+    // the demo's Stop path: rejectPendingConfirms() resolves the confirm with
+    // false, then inFlightController.abort() aborts the run. With maxToolRounds
+    // 1, the only round IS the final round — the pre-fix code fell through to
+    // the `truncated: true` return instead of rejecting, so the caller couldn't
+    // tell an intentional stop from a genuine cap hit.
+    let resolveConfirm!: (accept: boolean) => void;
+    const confirmPromise = new Promise<boolean>((r) => {
+      resolveConfirm = r;
+    });
+    registry.register({
+      name: 'writeData',
+      description: 'Write',
+      riskTier: 'write',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: vi.fn(),
+    });
+    const ac = new AbortController();
+    const callLLM = vi.fn().mockResolvedValue({
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'c1', type: 'function', function: { name: 'writeData', arguments: '{}' } },
+        ],
+      },
+      reasoning: '',
+    });
+    const deps: ToolLoopDeps = {
+      callLLM,
+      registry,
+      audit,
+      config: { ...baseConfig, onConfirmRequired: vi.fn().mockReturnValue(confirmPromise) },
+      maxToolRounds: 1,
+      loopRetries: 1,
+    };
+
+    const p = runToolLoop(deps, 'hi', ac.signal);
+    // Let the confirm be requested (executeToolCalls is parked in
+    // onConfirmRequired), then abort + reject — the demo's Stop sequence.
+    await vi.waitFor(() => expect(deps.config.onConfirmRequired).toHaveBeenCalled());
+    ac.abort(new Error('user stopped'));
+    resolveConfirm(false);
+
+    // The run rejects with the abort reason (not a { truncated: true } resolve).
+    await expect(p).rejects.toThrow('user stopped');
+    // An abort is neither a truncation nor a failure — never audited as such.
+    expect(audit.getAll().some((e) => e.type === 'max_tool_rounds_reached')).toBe(false);
+    expect(audit.getAll().some((e) => e.type === 'run_failed')).toBe(false);
+  });
+
   it('assembles system prompt, history, and the new user message in order', async () => {
     const seen: LLMMessage[][] = [];
     const deps = seqDeps(

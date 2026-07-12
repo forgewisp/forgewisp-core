@@ -193,6 +193,9 @@ interface QueuedConfirm {
 
 const confirmQueue: QueuedConfirm[] = [];
 let activeConfirm: QueuedConfirm | null = null;
+// The active dialog's cleanup callback, captured so an in-flight Stop can
+// close the dialog (reject the confirm) without going through its buttons.
+let activeConfirmCleanup: ((result: boolean) => void) | null = null;
 
 function showConfirmDialog(pendingCall: PendingCall): Promise<boolean> {
   return new Promise((resolve) => {
@@ -226,6 +229,7 @@ function renderConfirmDialog(pendingCall: PendingCall, done: (result: boolean) =
   const previouslyFocused = document.activeElement as HTMLElement | null;
 
   const cleanup = (result: boolean): void => {
+    activeConfirmCleanup = null;
     els.confirmOverlay.classList.add('hidden');
     els.confirmAccept.removeEventListener('click', onAccept);
     els.confirmReject.removeEventListener('click', onReject);
@@ -249,6 +253,7 @@ function renderConfirmDialog(pendingCall: PendingCall, done: (result: boolean) =
   els.confirmAccept.addEventListener('click', onAccept);
   els.confirmReject.addEventListener('click', onReject);
   document.addEventListener('keydown', onKeydown);
+  activeConfirmCleanup = cleanup;
 }
 
 // ─── Audit log ───────────────────────────────────────────────────────────────
@@ -314,6 +319,27 @@ function appendAssistantMessage(text: string): void {
   el.className = 'message message-assistant';
   el.innerHTML = renderMarkdown(text);
   els.chatMessages.appendChild(el);
+}
+
+// Shown when the user cancels an in-flight run. Follows the finalized partial
+// bubble if any text streamed; stands alone if nothing streamed yet.
+function appendStoppedMarker(): void {
+  const el = document.createElement('div');
+  el.className = 'message message-stopped';
+  el.textContent = '[stopped]';
+  els.chatMessages.appendChild(el);
+}
+
+// Resolve every pending confirm (active dialog + queued) with `false` so the
+// executor's concurrent Promise.allSettled settles and an aborted run actually
+// terminates — core's onConfirmRequired isn't abort-aware until P2.1, so
+// without this a queued confirm would keep the round alive post-abort.
+function rejectPendingConfirms(): void {
+  const queued = confirmQueue.splice(0);
+  for (const q of queued) q.resolve(false);
+  const cleanup = activeConfirmCleanup;
+  activeConfirmCleanup = null;
+  cleanup?.(false);
 }
 
 // ─── Agent setup ──────────────────────────────────────────────────────────────
@@ -838,9 +864,21 @@ function hideConfigForm(): void {
 
 // ─── Chat form ────────────────────────────────────────────────────────────────
 
-function setFormDisabled(disabled: boolean): void {
-  els.chatInput.disabled = disabled;
-  els.sendButton.disabled = disabled;
+function setRunInFlight(inFlight: boolean): void {
+  els.chatInput.disabled = inFlight;
+  // Keep the action button enabled in both states so Stop is always clickable.
+  els.sendButton.disabled = false;
+  els.sendButton.textContent = inFlight ? 'Stop' : 'Send';
+  els.sendButton.setAttribute('aria-label', inFlight ? 'Stop generation' : 'Send message');
+  els.sendButton.type = inFlight ? 'button' : 'submit';
+  els.sendButton.classList.toggle('stop', inFlight);
+}
+
+// Cancel the in-flight run: reject any pending confirm first (so the round
+// actually terminates), then abort the controller.
+function abortRun(): void {
+  rejectPendingConfirms();
+  inFlightController?.abort();
 }
 
 async function handleChatSubmit(e: SubmitEvent): Promise<void> {
@@ -851,7 +889,7 @@ async function handleChatSubmit(e: SubmitEvent): Promise<void> {
 
   appendUserMessage(text);
   els.chatInput.value = '';
-  setFormDisabled(true);
+  setRunInFlight(true);
   showThinkingPlaceholder();
 
   // Per-turn streaming buffer. Module-level so the buildAgent-bound streaming callbacks can reach
@@ -890,18 +928,39 @@ async function handleChatSubmit(e: SubmitEvent): Promise<void> {
     }
   } catch (err) {
     finalizeStreamingMessage();
-    const msg = err instanceof Error ? err.message : String(err);
-    appendAssistantMessage(`[error] ${msg}`);
+    if (controller.signal.aborted) {
+      // Intentional Stop — surface as a stopped state, not an error. The
+      // finalized partial bubble (if any text streamed) stays for the user.
+      appendStoppedMarker();
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendAssistantMessage(`[error] ${msg}`);
+    }
   } finally {
     inFlightController = null;
     currentTurnStreamingText = null;
     removeThinkingPlaceholder();
-    setFormDisabled(false);
+    setRunInFlight(false);
     els.chatInput.focus();
   }
 }
 
 els.chatForm.addEventListener('submit', (e: SubmitEvent) => void handleChatSubmit(e));
+
+// The action button doubles as Stop while a run is in flight (type is switched
+// to "button" in setRunInFlight, so this click won't trigger a form submit).
+els.sendButton.addEventListener('click', (e: MouseEvent) => {
+  // A run is in flight → this click is a Stop. Ignore the trailing click(s) of
+  // a multi-click gesture (e.detail >= 2): a rapid double-click on Send starts
+  // the run on the first click (which flips this button to Stop), and the
+  // second click must NOT abort that just-started run. A genuine Stop is its
+  // own gesture (e.detail === 1; a programmatic .click() is 0), so it still
+  // aborts normally.
+  if (inFlightController && e.detail < 2) {
+    e.preventDefault();
+    abortRun();
+  }
+});
 
 // ─── Config form handler ──────────────────────────────────────────────────────
 
