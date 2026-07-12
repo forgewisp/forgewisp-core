@@ -1,4 +1,5 @@
 import { AuditLog } from './audit.js';
+import { toErrorMessage } from './errors.js';
 import { FunctionRegistry } from './registry.js';
 import { validateArgs } from './validator.js';
 import {
@@ -105,9 +106,15 @@ export async function executeToolCalls(
 
     const validation = validateArgs(args, def.parameters);
     if (!validation.valid) {
+      // `compileError` means the schema itself is malformed (an Ajv compile
+      // failure), not that the args failed validation — the message must
+      // distinguish the two so the audit event is debuggable.
+      const error = validation.compileError
+        ? `Schema compile failed: ${validation.compileError}`
+        : `Validation failed: ${validation.errors.join('; ')}`;
       abort(call, name, 'validation_failed', 'validation_failed', {
         args,
-        error: `Validation failed: ${validation.errors.join('; ')}`,
+        error,
       });
       continue;
     }
@@ -183,7 +190,7 @@ async function runCall(
     try {
       confirmed = await config.onConfirmRequired(pendingCall);
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
+      const error = toErrorMessage(err);
       events.push({
         type: 'function_errored',
         functionName: name,
@@ -240,7 +247,7 @@ async function runCall(
       events,
     };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    const error = toErrorMessage(err);
     events.push({
       type: 'function_errored',
       functionName: name,

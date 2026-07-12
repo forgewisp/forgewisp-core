@@ -1,6 +1,6 @@
 {
   "name": "@forgewisp/bundled-tools",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "description": "Browser-effects tool catalog for AI agents — clipboard, geolocation, UUIDs, hashing, base64, QR codes, and more. Forgewisp-ready, safe by default.",
   "license": "MIT",
   "author": "Angelo Cavallo",

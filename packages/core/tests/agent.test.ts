@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAgent } from '../src/index.js';
-import { AuditEvent, ForgewispConfig } from '../src/types.js';
+import { AuditEvent, ForgewispConfig, JSONSchema } from '../src/types.js';
 import type { LLMMessage } from '../src/wire.js';
 
 const baseAgentConfig: ForgewispConfig = {
@@ -373,6 +373,68 @@ describe('ForgewispAgent.run', () => {
         handler: () => 1,
       }),
     ).toThrow('onConfirmRequired');
+  });
+
+  it('throws at registerFunction time when the schema cannot be compiled by Ajv', () => {
+    // Fail-fast at registration: a malformed schema (here an unresolvable
+    // `$ref`) is rejected before it enters the registry, so it is never
+    // advertised to the LLM via toLLMTools() and never re-compiled per round.
+    // This is the primary gate; validateArgs' catch is the defense-in-depth
+    // backstop exercised in executor.test.ts.
+    const agent = createAgent(baseAgentConfig);
+    // A valid schema registers fine.
+    expect(() =>
+      agent.registerFunction({
+        name: 'ok',
+        description: 'Ok',
+        riskTier: 'read',
+        parameters: { type: 'object', properties: { x: { type: 'integer' } }, required: ['x'] },
+        handler: () => 1,
+      }),
+    ).not.toThrow();
+    // An unresolvable $ref throws at registration with a clear message that
+    // names the tool and carries Ajv's schema-path message.
+    expect(() =>
+      agent.registerFunction({
+        name: 'broken',
+        description: 'Broken',
+        riskTier: 'read',
+        parameters: {
+          type: 'object',
+          properties: { x: { $ref: '#/definitions/Nonexistent' } },
+          required: ['x'],
+        } as unknown as JSONSchema,
+        handler: () => 1,
+      }),
+    ).toThrow(/Cannot register "broken"/);
+    // An invalid keyword value throws too, and the message includes the
+    // schema path Ajv reported.
+    expect(() =>
+      agent.registerFunction({
+        name: 'badKeyword',
+        description: 'Bad',
+        riskTier: 'read',
+        parameters: {
+          type: 'object',
+          properties: { x: { type: 'not-a-real-type' } },
+        } as unknown as JSONSchema,
+        handler: () => 1,
+      }),
+    ).toThrow(/properties\/x/);
+    // Re-registering the same broken schema still throws (a broken validator
+    // is never cached, so the failure stays observable until the schema is fixed).
+    expect(() =>
+      agent.registerFunction({
+        name: 'brokenAgain',
+        description: 'Broken',
+        riskTier: 'read',
+        parameters: {
+          type: 'object',
+          properties: { x: { $ref: '#/definitions/Nope' } },
+        } as unknown as JSONSchema,
+        handler: () => 1,
+      }),
+    ).toThrow(/Cannot register "brokenAgain"/);
   });
 
   it('respects maxToolRounds from config', async () => {

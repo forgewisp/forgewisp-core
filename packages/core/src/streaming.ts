@@ -1,4 +1,5 @@
 import { AuditLog } from './audit.js';
+import { toErrorMessage } from './errors.js';
 import { StreamingConfig } from './types.js';
 import type { LLMMessage, LLMToolCall, OpenAIChunk, StreamResult } from './wire.js';
 
@@ -188,7 +189,7 @@ async function parseOpenAIStream(
     try {
       chunk = JSON.parse(data) as OpenAIChunk;
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
+      const error = toErrorMessage(err);
       config.onMalformedChunk?.({ raw: data, error });
       audit?.record('stream_malformed', 'system', { error: `${error}: ${data}` });
       continue;

@@ -1,8 +1,10 @@
 import { AuditLog } from './audit.js';
+import { toErrorMessage } from './errors.js';
 import { HttpClient } from './http.js';
 import { runToolLoop } from './loop.js';
 import { FunctionRegistry } from './registry.js';
 import { streamCompletion } from './streaming.js';
+import { compileSchema } from './validator.js';
 import {
   AgentResult,
   AuditEvent,
@@ -70,6 +72,21 @@ export class ForgewispAgent {
         `[Forgewisp] Cannot register "${def.name}" (riskTier: ${def.riskTier}): ` +
           `onConfirmRequired is not configured. Provide one in ForgewispConfig before ` +
           `registering write or destructive tools.`,
+      );
+    }
+    // Fail-fast at registration: compile the schema now so a malformed schema
+    // (an unresolvable `$ref`, an invalid keyword value, a recursive `$ref`)
+    // is rejected before it enters the registry — instead of being advertised
+    // to the LLM via `toLLMTools()` every round and re-compiled per call.
+    // Mirrors the risk-tier invariant above. The compiled validator is cached,
+    // so the per-round `validateArgs` call hits the cache and never re-compiles.
+    try {
+      compileSchema(def.parameters);
+    } catch (err) {
+      throw new Error(
+        `[Forgewisp] Cannot register "${def.name}": its JSON Schema could not be ` +
+          `compiled (a malformed schema is a programming bug — e.g. an unresolvable ` +
+          `'$ref' or an invalid keyword value). ${toErrorMessage(err)}`,
       );
     }
     this.registry.register(def as FunctionDefinition);

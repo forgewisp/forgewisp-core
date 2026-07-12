@@ -1,5 +1,6 @@
 import { AuditLog } from './audit.js';
 import { executeToolCalls } from './executor.js';
+import { toErrorMessage } from './errors.js';
 import {
   backoffDelay,
   DEFAULT_BACKOFF_BASE_MS,
@@ -100,7 +101,7 @@ export async function runToolLoop(
     }
 
     if (!llmResult) {
-      const errMsg = errMessage(lastError);
+      const errMsg = toErrorMessage(lastError);
       // Preserve the original stack on the audit event so a programming error
       // (e.g. a TypeError regression in streaming) laundered through this
       // catch-all is still debuggable from the audit export — the user-facing
@@ -172,7 +173,7 @@ export async function runToolLoop(
       } catch (err) {
         // Handler returned a non-serializable value (e.g. circular). Don't let
         // it kill the run — fall back to a placeholder and audit the failure.
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = toErrorMessage(err);
         content = JSON.stringify({ error: '[non-serializable result]' });
         deps.audit.record('function_errored', result.functionName, {
           error: `result serialization failed: ${errMsg}`,
@@ -219,32 +220,6 @@ function buildReasoning(
 // `retryBackoffMaxMs`) AND the HTTP layer's `sleep` / `backoffDelay` helpers —
 // one backoff curve, configured and implemented in one place (http.ts), so the
 // two layers cannot drift apart.
-
-/** Coerces a thrown value into a human-readable string for `run_failed`. */
-function errMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  // `undefined`/`null` reach here when the retry loop never entered (e.g. a
-  // NaN/negative `loopRetries` slipped past the agent-layer guard) so
-  // `lastError` was never assigned — return a concrete string rather than the
-  // JS value `undefined` (JSON.stringify(undefined) === undefined), which would
-  // violate the `: string` return type and break consumers doing
-  // `result.error.includes(...)`.
-  if (err === undefined || err === null) return '[Forgewisp] Unknown error.';
-  if (typeof err === 'number' || typeof err === 'boolean' || typeof err === 'bigint') {
-    return String(err);
-  }
-  // An object, array, function, or symbol. Prefer a JSON form (the common case
-  // for a thrown plain object like `{ code: 500 }`); if it isn't JSON-serializable
-  // (circular) or JSON.stringify returns the value `undefined` (function/symbol),
-  // fall back to a concrete placeholder instead of `[object Object]`.
-  try {
-    const s = JSON.stringify(err);
-    return s === undefined ? '[Forgewisp] Unknown error.' : s;
-  } catch {
-    return '[Forgewisp] Unknown error.';
-  }
-}
 
 /**
  * Sleeps for a loop-level backoff before retrying the LLM call, using the
