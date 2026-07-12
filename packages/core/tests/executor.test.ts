@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeToolCalls } from '../src/executor.js';
 import { FunctionRegistry } from '../src/registry.js';
 import { AuditLog } from '../src/audit.js';
-import { ForgewispConfig } from '../src/types.js';
+import { ForgewispConfig, JSONSchema } from '../src/types.js';
 import type { LLMToolCall } from '../src/wire.js';
 
 const makeToolCall = (name: string, args: Record<string, unknown>): LLMToolCall => ({
@@ -322,5 +322,71 @@ describe('executeToolCalls', () => {
     expect(types).toContain('function_requested');
     expect(types).toContain('validation_passed');
     expect(types).toContain('function_executed');
+  });
+
+  it('skips a call whose schema Ajv rejects at compile time and continues the run (P1.5 backstop)', async () => {
+    // Defense-in-depth backstop for the validateArgs compile-error path. The
+    // PRIMARY gate is registration-time: `agent.registerFunction` calls
+    // `compileSchema` and rejects a malformed schema before it enters the
+    // registry (see agent.test.ts). This test bypasses that gate by
+    // registering directly on the `FunctionRegistry` (the path a directly-used
+    // registry or a future bypass would take) and proves the executor still
+    // does not crash: `validateArgs` catches the Ajv compile throw and emits
+    // `validation_failed` so the run continues. The schema is constructed via
+    // `as unknown as JSONSchema` precisely because it is not representable in
+    // the typed surface — that's the whole gap.
+    const brokenHandler = vi.fn().mockResolvedValue('should-not-run');
+    registry.register({
+      name: 'broken',
+      description: 'Broken schema',
+      riskTier: 'read',
+      parameters: {
+        type: 'object',
+        properties: { x: { $ref: '#/definitions/Nonexistent' } },
+        required: ['x'],
+      } as unknown as JSONSchema,
+      handler: brokenHandler,
+    });
+    const goodHandler = vi.fn().mockResolvedValue('ok');
+    registry.register({
+      name: 'good',
+      description: 'Good schema',
+      riskTier: 'read',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: goodHandler,
+    });
+
+    const { executed, aborted, toolResults } = await executeToolCalls(
+      [makeToolCall('broken', { x: 1 }), makeToolCall('good', {})],
+      registry,
+      audit,
+      baseConfig,
+    );
+
+    // The broken call is skipped, not retried; its handler never runs.
+    expect(brokenHandler).not.toHaveBeenCalled();
+    expect(aborted).toHaveLength(1);
+    expect(aborted[0]!.functionName).toBe('broken');
+    expect(aborted[0]!.reason).toBe('validation_failed');
+    expect(aborted[0]!.error).toMatch(/Schema compile failed/);
+    expect(aborted[0]!.error).toMatch(/Nonexistent/);
+
+    // The run continues: the sibling valid call still executes.
+    expect(goodHandler).toHaveBeenCalledOnce();
+    expect(executed).toHaveLength(1);
+    expect(executed[0]!.functionName).toBe('good');
+
+    // The broken call's tool result is carried back (success: false) so the
+    // loop can relay the failure to the model.
+    expect(toolResults).toHaveLength(2);
+    const brokenResult = toolResults.find((r) => r.functionName === 'broken');
+    expect(brokenResult!.success).toBe(false);
+    expect(brokenResult!.abortReason).toBe('validation_failed');
+
+    // `validation_failed` is audited with the schema compile error.
+    const failedEvent = audit.getAll().find((e) => e.type === 'validation_failed');
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent!.functionName).toBe('broken');
+    expect(failedEvent!.error).toMatch(/Schema compile failed/);
   });
 });

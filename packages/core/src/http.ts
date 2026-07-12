@@ -1,3 +1,4 @@
+import { toErrorMessage } from './errors.js';
 import type { LLMMessage, LLMTool } from './wire.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
@@ -255,9 +256,9 @@ export class HttpClient {
             0,
             '',
             true,
-            `[Forgewisp] LLM request failed after ${attempt + 1} attempts (network error): ${
-              err instanceof Error ? err.message : String(err)
-            }`,
+            `[Forgewisp] LLM request failed after ${attempt + 1} attempts (network error): ${toErrorMessage(
+              err,
+            )}`,
           );
         }
         handle.clear();

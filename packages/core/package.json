@@ -1,6 +1,6 @@
 {
   "name": "@forgewisp/core",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "description": "Safe, function-calling AI agents for the browser",
   "license": "MIT",
   "author": "Angelo Cavallo",

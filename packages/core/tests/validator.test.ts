@@ -142,4 +142,61 @@ describe('validateArgs', () => {
       expect(compileSpy).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('schema compile failures (P1.5)', () => {
+    // A malformed schema is a programming bug — e.g. an MCP adapter casting a
+    // raw `inputSchema` (which may carry `$ref` or invalid keyword values) to
+    // the narrow `JSONSchema` type at the boundary. `validateArgs` must catch
+    // the Ajv compile throw and surface it as a compile error rather than let
+    // it crash the run. These schemas are constructed via `as unknown as
+    // JSONSchema` precisely because they are *not* representable in the typed
+    // surface — that's the whole gap.
+    it('catches an unresolvable $ref and returns a compileError instead of throwing', () => {
+      const badSchema = {
+        type: 'object',
+        properties: { x: { $ref: '#/definitions/Nonexistent' } },
+        required: ['x'],
+      } as unknown as JSONSchema;
+      const result = validateArgs({ x: 1 }, badSchema);
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(0);
+      expect(result.compileError).toBeTruthy();
+      expect(result.compileError).toMatch(/Nonexistent/);
+    });
+
+    it('catches an invalid keyword value and surfaces the schema path', () => {
+      const badSchema = {
+        type: 'object',
+        properties: { x: { type: 'not-a-real-type' } },
+      } as unknown as JSONSchema;
+      const result = validateArgs({ x: 1 }, badSchema);
+      expect(result.valid).toBe(false);
+      expect(result.compileError).toBeTruthy();
+      // Ajv's compile-time message includes the schema path to the bad node.
+      expect(result.compileError).toMatch(/properties\/x/);
+    });
+
+    it('does not cache a compile failure (re-compiles each call)', () => {
+      const compileSpy = vi.spyOn(Ajv.prototype, 'compile');
+      const badSchema = {
+        type: 'object',
+        properties: { x: { $ref: '#/definitions/Nope' } },
+      } as unknown as JSONSchema;
+      validateArgs({ x: 1 }, badSchema);
+      validateArgs({ x: 2 }, badSchema);
+      // A broken validator is never cached: each call re-attempts compile so
+      // the failure stays observable and a future schema fix takes effect.
+      expect(compileSpy).toHaveBeenCalledTimes(2);
+      compileSpy.mockRestore();
+    });
+
+    it('validates normally once a previously-broken schema is fixed', () => {
+      const fixedSchema: JSONSchema = {
+        type: 'object',
+        properties: { x: { type: 'integer' } },
+        required: ['x'],
+      };
+      expect(validateArgs({ x: 1 }, fixedSchema).valid).toBe(true);
+    });
+  });
 });
