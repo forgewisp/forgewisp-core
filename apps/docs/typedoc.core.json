@@ -1,0 +1,6 @@
+{
+  "extends": "./typedoc.base.json",
+  "entryPoints": ["../../packages/core/src/index.ts"],
+  "tsconfig": "./typedoc.tsconfig.json",
+  "out": "./docs/core/api"
+}

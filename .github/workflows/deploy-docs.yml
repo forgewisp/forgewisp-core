@@ -1,0 +1,60 @@
+name: Deploy Docs
+
+# Docs deploy is gated on package publication: the Release workflow calls this
+# reusable workflow after @forgewisp/core, @forgewisp/bundled-tools, and
+# @forgewisp/mcp are published, so the generated API reference always matches a
+# released set of packages. Manual deploys remain available via workflow_dispatch.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+# Allow only one concurrent deployment. Queued runs for the same ref are de-duped
+# (only the newest runs); an in-progress deploy is allowed to finish rather than
+# being aborted mid-flight (a Pages deploy should not be canceled partway).
+concurrency:
+  group: deploy-docs-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `forgewisp-docs...` selects the docs app AND its workspace dependencies
+      # (core, bundled-tools, mcp), so TypeDoc can resolve their types before
+      # `pnpm gen:api` runs inside the docs build.
+      - name: Build docs (with deps)
+        run: pnpm exec turbo run build --filter=forgewisp-docs...
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/docs/build
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

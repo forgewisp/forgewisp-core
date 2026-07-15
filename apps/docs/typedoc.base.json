@@ -1,0 +1,17 @@
+{
+  "plugin": ["typedoc-plugin-markdown"],
+  "entryPointStrategy": "resolve",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeNotDocumented": false,
+  "disableSources": true,
+  "githubPages": false,
+  "outputFileStrategy": "members",
+  "flattenOutputFiles": true,
+  "useCodeBlocks": true,
+  "parametersFormat": "table",
+  "textContentMappings": {
+    "title": "API Reference"
+  }
+}

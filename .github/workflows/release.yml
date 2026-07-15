@@ -87,3 +87,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+
+  # Deploy the docs site only after the packages are published. Calls the
+  # reusable Deploy Docs workflow, which builds the Docusaurus site (TypeDoc
+  # API reference generated from the tagged source) and deploys to GitHub Pages.
+  docs:
+    needs: release
+    uses: ./.github/workflows/deploy-docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

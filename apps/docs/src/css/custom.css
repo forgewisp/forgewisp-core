@@ -1,0 +1,77 @@
+/**
+ * Forgewisp brand palette.
+ *
+ * "Forge" = heat + spark. The primary is a warm amber/ember, the secondary a
+ * cooler steel that pairs in dark mode. Tweak here — everything downstream
+ * (navbar, buttons, links, code selection) inherits via the Infima variables.
+ */
+
+:root {
+  --ifm-color-primary: #e8743b;
+  --ifm-color-primary-dark: #d9662f;
+  --ifm-color-primary-darker: #cd5e2c;
+  --ifm-color-primary-darkest: #a94d24;
+  --ifm-color-primary-light: #ec8455;
+  --ifm-color-primary-lighter: #ee8e64;
+  --ifm-color-primary-lightest: #f5ac8c;
+
+  --ifm-color-secondary: #5b6b7e;
+  --ifm-color-success: #3fa66b;
+  --ifm-color-info: #4a8cc2;
+  --ifm-color-warning: #e0a93a;
+  --ifm-color-danger: #d4534b;
+
+  --ifm-code-font-size: 90%;
+  --ifm-font-family-base:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+  --ifm-heading-font-weight: 700;
+  --ifm-link-decoration: none;
+
+  /* Landing surface (consumed by src/pages/index.module.css) */
+  --fw-ember-glow: radial-gradient(
+    ellipse at 50% -10%,
+    rgba(232, 116, 59, 0.28) 0%,
+    rgba(232, 116, 59, 0) 60%
+  );
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #f59461;
+  --ifm-color-primary-dark: #f1824a;
+  --ifm-color-primary-darker: #ed793d;
+  --ifm-color-primary-darkest: #e25e21;
+  --ifm-color-primary-light: #f7a87a;
+  --ifm-color-primary-lighter: #f8b088;
+  --ifm-color-primary-lightest: #fbcbac;
+
+  --ifm-color-secondary: #8294a8;
+  --ifm-background-color: #0f1115;
+  --ifm-background-surface-color: #161a21;
+  --ifm-card-background-color: #161a21;
+  --ifm-color-content: #d6dae0;
+}
+
+/* Navbar */
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Code blocks */
+code {
+  background-color: rgba(232, 116, 59, 0.08);
+  border-color: var(--ifm-color-emphasis-300);
+}
+
+/*
+ * Dark-mode primary buttons: the ember primary is light enough that the default
+ * white button text fails contrast (~2.3:1). Use dark text on primary buttons in
+ * dark mode (passes AAA on the light-orange primary and its hover/active shades).
+ */
+[data-theme='dark'] .button--primary,
+[data-theme='dark'] .button--primary:hover,
+[data-theme='dark'] .button--primary:active,
+[data-theme='dark'] .button--primary.button--active {
+  color: #1a1d24;
+}

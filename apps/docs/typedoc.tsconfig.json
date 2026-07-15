@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@forgewisp/core": ["packages/core/src/index.ts"],
+      "@forgewisp/bundled-tools": ["packages/bundled-tools/src/index.ts"],
+      "@forgewisp/mcp": ["packages/mcp/src/index.ts"]
+    },
+    "types": []
+  },
+  "include": ["../../packages/*/src"]
+}

@@ -224,7 +224,11 @@ export interface HttpConfig {
 }
 
 export interface ForgewispConfig {
-  /** Any OpenAI-compatible endpoint URL. */
+  /**
+   * The full OpenAI-compatible chat-completions URL. Used **verbatim** as the
+   * fetch target — forgewisp does not append `/chat/completions` (or any path),
+   * so include it yourself, e.g. `https://api.openai.com/v1/chat/completions`.
+   */
   llmEndpoint: string;
   /** API key. Omit if the endpoint is proxied. */
   apiKey?: string;
