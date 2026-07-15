@@ -1,0 +1,39 @@
+{
+  "name": "forgewisp-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "gen:api": "pnpm run \"/^gen:api:.*/\" && node scripts/sanitize-api-md.mjs",
+    "gen:api:core": "typedoc --options typedoc.core.json",
+    "gen:api:bundled-tools": "typedoc --options typedoc.bundled-tools.json",
+    "gen:api:mcp": "typedoc --options typedoc.mcp.json",
+    "predev": "pnpm gen:api",
+    "dev": "docusaurus start --no-open",
+    "prebuild": "pnpm gen:api",
+    "build": "docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear"
+  },
+  "dependencies": {
+    "@forgewisp/core": "workspace:*",
+    "@forgewisp/bundled-tools": "workspace:*",
+    "@forgewisp/mcp": "workspace:*",
+    "@docusaurus/core": "^3.8.1",
+    "@docusaurus/preset-classic": "^3.8.1",
+    "@docusaurus/theme-classic": "^3.8.1",
+    "@mdx-js/react": "^3.1.0",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "^3.8.1",
+    "@docusaurus/tsconfig": "^3.8.1",
+    "@docusaurus/types": "^3.8.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typedoc": "^0.28.5",
+    "typedoc-plugin-markdown": "^4.4.3",
+    "typescript": "^5.4.0"
+  }
+}

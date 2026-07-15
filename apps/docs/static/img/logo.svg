@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Forgewisp">
+  <defs>
+    <linearGradient id="fw-ember" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5ac8c" />
+      <stop offset="1" stop-color="#e8743b" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0f1115" />
+  <!-- monogram F -->
+  <path d="M22 14H44V24H32V30H40V39H32V50H22Z" fill="url(#fw-ember)" />
+</svg>

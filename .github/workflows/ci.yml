@@ -38,6 +38,9 @@ jobs:
 
       - run: pnpm typecheck
 
-      - run: pnpm build
+      # The Docusaurus docs app (apps/docs) is built + deployed by the
+      # deploy-docs workflow; excluded here to keep PR CI lean and avoid
+      # pulling the Docusaurus/TypeDoc toolchain into every run.
+      - run: pnpm exec turbo run build --filter=!forgewisp-docs
 
       - run: pnpm test

@@ -30,6 +30,14 @@ Thumbs.db
 # Vite cache
 .vite/
 
+# Docusaurus (apps/docs)
+apps/docs/build/
+apps/docs/.docusaurus/
+apps/docs/.cache-loader/
+# TypeDoc-generated API reference (regenerated via `pnpm gen:api`)
+apps/docs/docs/**/api/*.md
+apps/docs/docs/**/api/*.mdx
+
 # Claude Code local settings
 .claude/settings.local.json
 
